@@ -35,6 +35,6 @@ pub(super) mod utils;
 pub(super) mod http;
 
 pub mod order;
-mod item;
+pub mod item;
 
 pub use client::*;
