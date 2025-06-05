@@ -1,3 +1,3 @@
 pub mod http;
 pub mod user;
-mod item;
+pub mod item;

@@ -9,5 +9,6 @@ pub enum AuthError {
 pub enum ApiError {
     ParsingError(String),
     RequestError,
+    Unauthorized,
     Unknown(String),
 }

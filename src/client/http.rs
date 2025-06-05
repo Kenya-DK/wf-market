@@ -35,7 +35,7 @@ impl<State> Client<State> {
     - A `Result` containing the deserialized response or an `ApiError` on failure.
     */
     pub(crate) async fn call_api<T: serde::de::DeserializeOwned>(
-        self,
+        &mut self,
         method: Method,
         path: &str,
         body: Option<&impl Serialize>,

@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-#[derive(Deserialize)]
+#[derive(Clone, Copy, Deserialize)]
 pub enum OrderType {
     #[serde(rename = "buy")]
     Buy,
@@ -8,7 +8,7 @@ pub enum OrderType {
     Sell,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct Order {
     pub id: String,
     #[serde(rename = "type")]
