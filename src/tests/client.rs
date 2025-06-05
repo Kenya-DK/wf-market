@@ -1,4 +1,5 @@
 use crate::client::Client;
+use crate::types::filter::OrdersTopFilters;
 
 const TEST_ITEM: &str = "yareli_prime_set";
 const TEST_SCULPTURE: &str = "ayatan_ayr_sculpture";
@@ -16,7 +17,30 @@ async fn test_orders() {
 async fn test_orders_top() {
     let mut client = Client::new();
     
-    let _ = client.get_orders_top(TEST_ITEM).await.unwrap();
+    let _ = client.get_orders_top(TEST_ITEM, None).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_filtered_orders_top() {
+    let mut client = Client::new();
+    
+    let filters = OrdersTopFilters {
+        rank: Some(10),
+        rank_lt: None,
+        charges: None,
+        charges_lt: None,
+        amber_stars: None,
+        amber_stars_lt: None,
+        cyan_stars: None,
+        cyan_stars_lt: None,
+        subtype: None,
+    };
+
+    let mods = client.get_orders_top(TEST_MOD, Some(filters)).await.unwrap();
+    let _ = mods.iter().map(|order| {
+        let item_mod = order.clone().get_type();
+        assert_eq!(item_mod.rank.unwrap(), 10u8);
+    });
 }
 
 #[tokio::test]

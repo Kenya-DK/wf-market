@@ -2,6 +2,12 @@
 name = "wf_market"
 version = "0.1.0"
 edition = "2024"
+repository = "https://github.com/KibbeWater/wf-market"
+license = "GPL-3.0-only"
+homepage = "https://github.com/KibbeWater/wf-market"
+readme = "README.md"
+authors = ["KibbeWater <35224538+KibbeWater@users.noreply.github.com>"]
+keywords = ["warframe", "market"]
 
 [dependencies]
 tokio = {version =  "1.45.1", features = ["full"] }

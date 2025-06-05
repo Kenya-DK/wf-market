@@ -10,6 +10,7 @@ use crate::types::user::{FullUser, StatusType};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::marker::PhantomData;
+use crate::types::filter::OrdersTopFilters;
 
 pub struct Unauthenticated;
 pub struct Authenticated;
@@ -98,11 +99,17 @@ impl<State> Client<State> {
     # Returns
     Total of 10 orders, top 5 buy/sell orders
     */
-    pub async fn get_orders_top(&mut self, slug: &str) -> Result<Vec<Order<Unowned>>, ApiError> {
+    pub async fn get_orders_top(&mut self, slug: &str, filters: Option<OrdersTopFilters>) -> Result<Vec<Order<Unowned>>, ApiError> {
+        let query: String = if let Some(filters) = filters { 
+            let params = serde_urlencoded::to_string(filters)
+                .map_err(|_| ApiError::ParsingError("Unable to serialize filters".to_string()))?;
+            format!("?{}", params)
+        } else { String::new() };
+        
         let items: Result<ApiResult<OrdersTopResult>, ApiError> = self
             .call_api(
                 Method::Get,
-                format!("/orders/item/{}/top", slug).as_str(),
+                format!("/orders/item/{}/top{}", slug, query).as_str(),
                 None::<&NoBody>,
             )
             .await;
