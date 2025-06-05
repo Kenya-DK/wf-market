@@ -19,7 +19,6 @@ pub struct FullUser {
     pub id: String,
     #[serde(rename = "ingame_name", alias = "ingameName")]
     pub name: String,
-    pub role: String,
     pub reputation: i32,
     pub platform: String,
     #[serde(rename = "status", default = "default_status_type")]
@@ -32,11 +31,10 @@ pub struct FullUser {
     pub unread_messages: i32,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct MinimalUser {
     pub id: String,
     #[serde(rename = "ingame_name", alias = "ingameName")]
     pub name: String,
-    pub role: String,
     pub reputation: i32
 }

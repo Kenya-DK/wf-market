@@ -28,23 +28,25 @@ use std::marker::PhantomData;
 use crate::types::item::{Order as OrderItem};
 
 pub struct Owned;
+#[derive(Clone)]
 pub struct Unowned;
 
+#[derive(Clone)]
 pub struct Order<State = Unowned> {
-    pub(crate) order: OrderItem,
+    pub(crate) object: OrderItem,
     _state: PhantomData<State>,
 }
 
 impl<State> Order<State> {
     pub fn get_type(&mut self) -> OrderItem {
-        self.order.clone()
+        self.object.clone()
     }
 }
 
 impl Order<Unowned> {
     pub(super) fn new(order: &OrderItem) -> Self {
         Order {
-            order: order.clone(),
+            object: order.clone(),
             _state: PhantomData,
         }
     }
@@ -53,7 +55,7 @@ impl Order<Unowned> {
 impl Order<Owned> {
     pub(super) fn new_owned(order: &OrderItem) -> Self {
         Order {
-            order: order.clone(),
+            object: order.clone(),
             _state: PhantomData,
         }
     }

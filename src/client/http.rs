@@ -56,9 +56,14 @@ impl<State> Client<State> {
                     .text()
                     .await
                     .map_err(|_| ApiError::Unknown("Error".to_string()))?;
-                let data: T =
-                    serde_json::from_str(&body).map_err(|_| ApiError::ParsingError(body))?;
-                Ok(data)
+                let data = serde_json::from_str::<T>(&body);
+                
+                match data {
+                    Ok(data) => Ok(data),
+                    Err(err) => { 
+                        Err(ApiError::ParsingError(format!("Error Parsing: {:?}", err).to_string()))
+                    },
+                }
             }
             Err(_) => Err(ApiError::RequestError),
         }
