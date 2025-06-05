@@ -36,6 +36,12 @@ impl<State> Client<State> {
 }
 
 impl Client<Unauthenticated> {
+    /**
+    Constructs a new client
+    
+    # Returns
+    A client? duh?
+    */
     pub fn new() -> Self {
         Client {
             http: build_http(None),
@@ -46,6 +52,17 @@ impl Client<Unauthenticated> {
         }
     }
 
+    /**
+    Log in using username and password
+    
+    # Arguments
+    - `username`: Users account username
+    - `password`: Users account password
+    - `device_id`: Unique identifier across the device, should not change between instances
+    
+    # Returns
+    An authenticated client
+    */
     pub async fn login(self, username: &str, password: &str, device_id: &str) -> Result<Client<Authenticated>, AuthError> {
         let mut map = HashMap::new();
         map.insert("auth_type", "header");
