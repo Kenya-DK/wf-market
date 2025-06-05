@@ -2,6 +2,7 @@
 name = "wf_market"
 version = "0.1.0"
 edition = "2024"
+description = "A small Rust library to interact with Warframe Market APIs"
 repository = "https://github.com/KibbeWater/wf-market"
 license = "GPL-3.0-only"
 homepage = "https://github.com/KibbeWater/wf-market"
