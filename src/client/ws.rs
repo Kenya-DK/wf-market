@@ -22,7 +22,7 @@ async fn main() -> Result<(), WsError> {
             Ok(())
         })?
         .register_callback("event/reports/online", |msg, _, _| {
-            println!("Users Online: {}", msg.payload.get("authorizedUsers").unwrap().as_i64());
+            println!("Users Online: {}", msg.payload.unwrap().get("authorizedUsers").unwrap().as_i64());
             Ok(())
         })?
         .build().await?;
@@ -48,7 +48,8 @@ pub(super) const WS_URL: &'static str = "wss://warframe.market/socket-v2";
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct WsMessage {
     pub route: String,
-    pub payload: serde_json::Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub payload: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
     #[serde(rename = "refId", skip_serializing_if = "Option::is_none")]
@@ -124,7 +125,7 @@ impl MessageSender {
     ) -> Result<(), WsError> {
         let message = WsMessage {
             route: route.to_string(),
-            payload,
+            payload: Some(payload),
             id: Some(uuid::Uuid::new_v4().to_string()),
             ref_id: Some(ref_id.to_string()),
         };
@@ -139,7 +140,7 @@ impl MessageSender {
         let id = uuid::Uuid::new_v4().to_string();
         let message = WsMessage {
             route: route.to_string(),
-            payload,
+            payload: Some(payload),
             id: Some(id.clone()),
             ref_id: None,
         };
@@ -315,7 +316,7 @@ impl WsClientBuilder {
             };
             connected_callback(&WsMessage {
                 route: "@internal|internal/connected".to_string(),
-                payload: serde_json::Value::from(true),
+                payload: Some(serde_json::Value::from(true)),
                 id: Some("INTERNAL".to_string()),
                 ref_id: None,
             }, &route, &sender)?;
