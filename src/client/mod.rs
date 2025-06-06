@@ -36,5 +36,6 @@ pub(super) mod http;
 
 pub mod order;
 pub mod item;
+pub mod ws;
 
 pub use client::*;

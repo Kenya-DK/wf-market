@@ -12,3 +12,13 @@ pub enum ApiError {
     Unauthorized,
     Unknown(String),
 }
+
+#[derive(Debug)]
+pub enum WsError {
+    ReservedPath(String),
+    InvalidPath(String),
+    AlreadyRegistered(String),
+    InvalidMessageReceived(String),
+    ConnectionError,
+    InvalidMessage,
+}
