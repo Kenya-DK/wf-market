@@ -1,13 +1,46 @@
+/*!
+# Websockets
+
+Build a WebSocket Client to receive real-time information from Warframe Market
+
+## Record active users
+```rust
+use wf_market::{
+    error::WsError,
+    client::ws::WsClient
+};
+
+struct GlobalInfo {
+    active_users: u32,
+}
+
+#[tokio::main]
+async fn main() -> Result<(), WsError> {
+    let client = WsClient::new()
+        .register_callback("internal/connected", |msg, _, _| {
+            println!("WebSocket has connected to the WFM API");
+            Ok(())
+        })?
+        .register_callback("event/reports/online", |msg, _, _| {
+            println!("Users Online: {}", msg.payload.get("authorizedUsers").unwrap().as_i64());
+            Ok(())
+        })?
+        .build().await?;
+
+    loop { } // Our client is not long-running, so to keep the WsClient in scope we need to never return
+}
+```
+*/
+
 use futures_util::{SinkExt, StreamExt};
 use std::collections::HashMap;
 use std::sync::Arc;
-use reqwest::{Method, Request};
 use serde::{Deserialize, Serialize};
+use serde::de::DeserializeOwned;
 use tokio_tungstenite::{connect_async};
 use tokio_tungstenite::tungstenite::{Error, Message, Utf8Bytes};
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
-use tokio_tungstenite::tungstenite::http::Response;
 use crate::error::WsError;
 
 pub(super) const WS_URL: &'static str = "wss://warframe.market/socket-v2";
@@ -16,8 +49,9 @@ pub(super) const WS_URL: &'static str = "wss://warframe.market/socket-v2";
 pub struct WsMessage {
     pub route: String,
     pub payload: serde_json::Value,
-    pub id: String,
-    #[serde(rename = "refId")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(rename = "refId", skip_serializing_if = "Option::is_none")]
     pub ref_id: Option<String>,
 }
 
@@ -91,7 +125,7 @@ impl MessageSender {
         let message = WsMessage {
             route: route.to_string(),
             payload,
-            id: uuid::Uuid::new_v4().to_string(),
+            id: Some(uuid::Uuid::new_v4().to_string()),
             ref_id: Some(ref_id.to_string()),
         };
         self.send_message(message)
@@ -106,7 +140,7 @@ impl MessageSender {
         let message = WsMessage {
             route: route.to_string(),
             payload,
-            id: id.clone(),
+            id: Some(id.clone()),
             ref_id: None,
         };
         self.send_message(message)?;
@@ -282,7 +316,7 @@ impl WsClientBuilder {
             connected_callback(&WsMessage {
                 route: "@internal|internal/connected".to_string(),
                 payload: serde_json::Value::from(true),
-                id: "INTERNAL".to_string(),
+                id: Some("INTERNAL".to_string()),
                 ref_id: None,
             }, &route, &sender)?;
         }
