@@ -1,3 +1,33 @@
+/*!
+Provides a managed `Item` object, unlike the [`Item`][crate::types::item::Item] type, provides some helper functions
+
+# Examples
+
+```rust
+use wf_market::{
+    client::Client,
+    utils::generate_device_id,
+};
+
+#[tokio::main]
+async fn main() {
+    let mut client = Client::new();
+
+    match client.get_items().await {
+        Ok(mut items) => {
+            items = items.iter().filter(|item| item.is_sculpture()).collect();
+            println!("Sculpture Valuation:");
+            for item in items {
+                let sculpture = item.to_sculpture().unwrap();
+                println!("{}: {} endo", sculpture.get_name(), sculpture.calculate_value(None, None))
+            }
+        },
+        Err(e) => println!("Error: {:?}", e),
+    }
+}
+```
+*/
+
 use crate::error::ApiError;
 use crate::types::item::Item as ItemType;
 
@@ -24,6 +54,12 @@ impl<State> Item<State> {
     
     pub fn get_slug(&self) -> String {
         self.object.slug.clone()
+    }
+    
+    pub fn get_name(&self) -> String {
+        if let Some(en) = self.object.i18n.get("en") {
+            en.name.clone()
+        } else { String::new() }
     }
 }
 
@@ -78,6 +114,12 @@ impl Item<Regular> {
     
     pub fn is_mod(&self) -> bool {
         self.object.max_rank.is_some()
+    }
+}
+
+impl Item<Mod> {
+    pub fn get_rank(&self) -> u32 {
+        self.object.max_rank.unwrap_or(0)
     }
 }
 

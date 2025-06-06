@@ -1,5 +1,5 @@
 [package]
-name = "wf_market"
+name = "wf-market"
 version = "0.1.1"
 edition = "2024"
 description = "A small Rust library to interact with Warframe Market APIs"

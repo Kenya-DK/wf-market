@@ -1,3 +1,7 @@
+/*!
+Small utility package for common actions
+*/
+
 use rand::Rng;
 use std::format;
 
@@ -15,7 +19,7 @@ pub fn generate_device_id() -> String {
     let mut rng = rand::rng();
     let chars: Vec<char> = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".chars().collect();
     let random_string: String = (0..16)
-        .map(|_| chars[rng.gen_range(0..chars.len())])
+        .map(|_| chars[rng.random_range(0..chars.len())])
         .collect();
     
     format!("d-{}", random_string)

@@ -1,27 +1,28 @@
 /*!
-Provides a managed `Order` object, unlike the Order type provides some helper functions
+Provides a managed `Order` object, unlike the [`Order`][crate::types::item::Order] type provides some helper functions
 
 # Examples
 
-```
+```rust
 use wf_market::{
     client::Client,
     utils::generate_device_id,
 };
- 
+
+#[tokio::main]
 async fn main() {
     let client = {
-        // device_id should be stored and reused
         Client::new()
             .login("username", "password", generate_device_id().as_str()).await.unwrap()
     };
 
+    println!("My orders:");
     client.orders.iter().map(|mut order| {
         let o = order.get_type();
         println!("{} (x{}): {}p", o.item_id, o.quantity, o.platinum);
     })
 }
-* ```
+```
 */
 
 use std::marker::PhantomData;

@@ -119,12 +119,12 @@ impl<State> Client<State> {
         let buy: Vec<Order<Unowned>> = data
             .buy
             .iter()
-            .map(|mut order| Order::new(&order.downgrade()))
+            .map(|order| Order::new(&order.downgrade()))
             .collect();
         let sell: Vec<Order<Unowned>> = data
             .sell
             .iter()
-            .map(|mut order| Order::new(&order.downgrade()))
+            .map(|order| Order::new(&order.downgrade()))
             .collect();
 
         let total: Vec<Order<Unowned>> = [buy, sell].concat();
@@ -268,7 +268,7 @@ impl Client<Authenticated> {
     }
 
     /**
-    Take ownership of an order, converts an <Unowned> order to an <Owned> one
+    Take ownership of an order, converts an `<Unowned>` order to an `<Owned>` one
 
     # Note
     This is using the stored information from the last `.refresh()`,

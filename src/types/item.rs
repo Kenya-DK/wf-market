@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use serde::Deserialize;
 use crate::types::user::{MinimalUser};
 
@@ -76,7 +77,19 @@ pub struct Item {
     pub endo_multiplier: Option<f32>,
     
     #[serde(rename = "reqMasteryRank", skip_serializing_if = "Option::is_none")]
-    pub mastery_rank: Option<u32>
+    pub mastery_rank: Option<u32>,
+    #[serde(default = "HashMap::new")]
+    pub i18n: HashMap<String, ItemTranslation>
+}
+
+#[derive(Clone, Deserialize)]
+pub struct ItemTranslation {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(rename = "wikiLink", skip_serializing_if = "Option::is_none")]
+    pub wiki_link: Option<String>,
+    pub icon: String,
 }
 
 #[derive(Debug, Deserialize)]
