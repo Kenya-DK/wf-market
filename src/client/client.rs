@@ -23,6 +23,7 @@ pub struct Client<State = Unauthenticated> {
     pub orders: Vec<Order<Owned>>,
     /// Status of the logged in user, updated via WebSocket
     pub status: StatusType,
+    token: Option<String>,
     _state: PhantomData<State>,
 }
 
@@ -146,6 +147,7 @@ impl Client<Unauthenticated> {
             user: None,
             orders: Vec::new(),
             status: Offline,
+            token: None,
             _state: PhantomData,
         }
     }
@@ -190,19 +192,20 @@ impl Client<Unauthenticated> {
 
                 match headers.get("Authorization") {
                     Some(header) => {
-                        let mut token: String = header
+                        let token: String = header
                             .to_str()
                             .map_err(|_| AuthError::ParsingError)?
                             .to_string();
-                        token = token.replace("JWT", "Bearer");
-
-                        let http = build_http(Some(token));
+                        
+                        let jwt = &token[3..]; // Remove the "JWT " from the token.
+                        let http = build_http(Some(format!("Bearer {}", jwt.clone())));
 
                         let mut authed_client = Client {
                             http,
                             user: Some(data.payload.user.clone()),
                             orders: Vec::new(),
                             status: data.payload.user.status_type,
+                            token: Some(jwt.to_string()),
                             _state: PhantomData,
                         };
 
@@ -280,7 +283,7 @@ impl Client<Authenticated> {
     # Returns
     - An Owned order
     */
-    pub fn take_order(self, order: Order<Unowned>) -> Result<Order<Owned>, ApiError> {
+    pub fn take_order(&mut self, order: Order<Unowned>) -> Result<Order<Owned>, ApiError> {
         if let Some(users_order) = self
             .orders
             .iter()
@@ -290,5 +293,16 @@ impl Client<Authenticated> {
         } else {
             Err(ApiError::Unauthorized)
         }
+    }
+    
+    /**
+    Return the authentication token
+    
+    # Returns
+    The users JWT token
+    */
+    pub fn get_token(&mut self) -> String {
+        // Only accessible on authed clients, if this panics we got hit by a cosmic particle
+        self.token.clone().unwrap()
     }
 }

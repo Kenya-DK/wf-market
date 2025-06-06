@@ -19,7 +19,7 @@ async fn test_connection() {
     let received_messages_clone2 = received_messages.clone();
     
     let client = WsClient::new()
-        .register_callback("internal/connect", move |msg,_,_| {
+        .register_callback("internal/connected", move |msg,_,_| {
             let mut arr = received_messages_clone1.lock().unwrap();
             arr.push(msg.clone());
 
