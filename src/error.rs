@@ -21,4 +21,6 @@ pub enum WsError {
     InvalidMessageReceived(String),
     ConnectionError,
     InvalidMessage,
+    SendError,
+    NotConnected,
 }
