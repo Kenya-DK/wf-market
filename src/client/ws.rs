@@ -34,7 +34,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use tokio_tungstenite::connect_async;
-use tokio_tungstenite::tungstenite::{Error, Message, Utf8Bytes};
+use tokio_tungstenite::tungstenite::{Message, Utf8Bytes};
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use crate::error::WsError;
