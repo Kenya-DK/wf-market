@@ -31,10 +31,13 @@ async fn main() {
 use crate::error::ApiError;
 use crate::types::item::Item as ItemType;
 
+#[derive(Clone)]
 pub struct Regular;
+#[derive(Clone)]
 pub struct Mod {
     rank: u32
 }
+#[derive(Clone)]
 pub struct Sculpture {
     amber_stars: u32,
     cyan_stars: u32,
@@ -42,6 +45,7 @@ pub struct Sculpture {
     endo_multiplier: f32,
 }
 
+#[derive(Clone)]
 pub struct Item<State = Regular> {
     object: ItemType,
     state: State,

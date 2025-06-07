@@ -2,7 +2,9 @@ use crate::client::http::Method;
 use crate::client::item::{Item, Regular};
 use crate::client::order::{Order, Owned, Unowned};
 use crate::client::utils::{AuthResp, build_http};
+use crate::client::ws::WsClientBuilder;
 use crate::error::{ApiError, AuthError};
+use crate::types::filter::OrdersTopFilters;
 use crate::types::http::{APIV1Result, ApiResult};
 use crate::types::item::{Item as ItemObject, Order as OrderItem, OrderWithUser, OrdersTopResult};
 use crate::types::user::StatusType::Offline;
@@ -10,8 +12,6 @@ use crate::types::user::{FullUser, StatusType};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::marker::PhantomData;
-use crate::client::ws::WsClientBuilder;
-use crate::types::filter::OrdersTopFilters;
 
 pub struct Unauthenticated;
 pub struct Authenticated;
@@ -24,10 +24,12 @@ pub struct Client<State = Unauthenticated> {
     pub orders: Vec<Order<Owned>>,
     /// Status of the logged in user, updated via WebSocket
     pub status: StatusType,
-    
+    /// Internal item cache
+    items_cache: Vec<Item>,
+
     token: Option<String>,
     device_id: Option<String>,
-    
+
     _state: PhantomData<State>,
 }
 
@@ -46,6 +48,12 @@ impl<State> Client<State> {
     List of all listed items
     */
     pub async fn get_items(&mut self) -> Result<Vec<Item<Regular>>, ApiError> {
+        if !self.items_cache.is_empty() {
+            let mut new_items = Vec::new();
+            new_items.clone_from(&self.items_cache);
+            return Ok(new_items);
+        }
+
         let items: Result<ApiResult<Vec<ItemObject>>, ApiError> =
             self.call_api(Method::Get, "/items", None::<&NoBody>).await;
 
@@ -104,13 +112,19 @@ impl<State> Client<State> {
     # Returns
     Total of 10 orders, top 5 buy/sell orders
     */
-    pub async fn get_orders_top(&mut self, slug: &str, filters: Option<OrdersTopFilters>) -> Result<Vec<Order<Unowned>>, ApiError> {
-        let query: String = if let Some(filters) = filters { 
+    pub async fn get_orders_top(
+        &mut self,
+        slug: &str,
+        filters: Option<OrdersTopFilters>,
+    ) -> Result<Vec<Order<Unowned>>, ApiError> {
+        let query: String = if let Some(filters) = filters {
             let params = serde_urlencoded::to_string(filters)
                 .map_err(|_| ApiError::ParsingError("Unable to serialize filters".to_string()))?;
             format!("?{}", params)
-        } else { String::new() };
-        
+        } else {
+            String::new()
+        };
+
         let items: Result<ApiResult<OrdersTopResult>, ApiError> = self
             .call_api(
                 Method::Get,
@@ -136,6 +150,19 @@ impl<State> Client<State> {
 
         Ok(total)
     }
+
+    pub async fn get_order_item(&mut self, order: Order) -> Result<Item<Regular>, ApiError> {
+        if let Some(item) = self
+            .get_items()
+            .await?
+            .iter()
+            .find(|i| i.get_type().id == order.object.item_id)
+        {
+            return Ok(item.clone());
+        }
+
+        Err(ApiError::Unknown("Item not found".to_string()))
+    }
 }
 
 impl Client<Unauthenticated> {
@@ -151,6 +178,7 @@ impl Client<Unauthenticated> {
             user: None,
             orders: Vec::new(),
             status: Offline,
+            items_cache: Vec::new(),
             token: None,
             device_id: None,
             _state: PhantomData,
@@ -201,7 +229,7 @@ impl Client<Unauthenticated> {
                             .to_str()
                             .map_err(|_| AuthError::ParsingError)?
                             .to_string();
-                        
+
                         let jwt = &token[4..]; // Remove the "JWT " from the token.
                         let http = build_http(Some(format!("Bearer {}", jwt)));
 
@@ -210,6 +238,7 @@ impl Client<Unauthenticated> {
                             user: Some(data.payload.user.clone()),
                             orders: Vec::new(),
                             status: data.payload.user.status_type,
+                            items_cache: self.items_cache,
                             token: Some(jwt.to_string()),
                             device_id: Some(device_id.parse().unwrap()),
                             _state: PhantomData,
@@ -300,10 +329,10 @@ impl Client<Authenticated> {
             Err(ApiError::Unauthorized)
         }
     }
-    
+
     /**
     Return the authentication token
-    
+
     # Returns
     The users JWT token
     */
@@ -311,7 +340,7 @@ impl Client<Authenticated> {
         // Only accessible on authed clients, if this panics we got hit by a cosmic particle
         self.token.clone().unwrap()
     }
-    
+
     /**
     Returns the clients device id
 
@@ -322,10 +351,10 @@ impl Client<Authenticated> {
         // Again, panics, cosmic particle, you get the gist of it now
         self.device_id.clone().unwrap()
     }
-    
+
     /**
     Create a WebSocket builder
-    
+
     # Returns
     A WsClient Builder
     */
