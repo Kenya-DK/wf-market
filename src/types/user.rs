@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, Eq, PartialEq)]
 pub enum StatusType {
     #[serde(rename = "offline")]
     Offline,

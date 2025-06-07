@@ -1,11 +1,11 @@
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum AuthError {
     NoUser,
     ParsingError,
     Unknown(String),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum ApiError {
     ParsingError(String),
     RequestError,
@@ -13,7 +13,7 @@ pub enum ApiError {
     Unknown(String),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum WsError {
     ReservedPath(String),
     InvalidPath(String),

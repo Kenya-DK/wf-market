@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use serde::Deserialize;
 use crate::types::user::{MinimalUser};
 
-#[derive(Clone, Copy, Deserialize, Debug)]
+#[derive(Clone, Copy, Deserialize, Debug, Eq, PartialEq)]
 pub enum OrderType {
     #[serde(rename = "buy")]
     Buy,
