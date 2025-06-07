@@ -1,8 +1,33 @@
-//! WebSocket client module for Warframe Market.
-//!
-//! This module provides types and builders to connect to the Warframe Market
-//! WebSocket API (`wss://warframe.market/socket?platform=pc`), send and receive
-//! messages in real time, and route incoming messages to user-defined callbacks.
+/*!
+WebSocket client module for Warframe Market.
+
+## Record active users
+```rust
+use wf_market::{
+    error::WsError,
+    client::ws::WsClient,
+    Client
+};
+
+#[tokio::main]
+async fn main() -> Result<(), WsError> {
+    let mut client = {
+        Client::new()
+            .login("user", "pass", "dev").await.unwrap()
+    };
+
+    let client = client.create_websocket()
+        .register_callback("MESSAGE/ONLINE_COUNT", |msg, _, _| {
+            let payload = msg.payload.clone().unwrap();
+            println!("Users Online: {}", payload.get("authorizedUsers").unwrap().as_i64());
+            Ok(())
+        })?
+        .build().await?;
+
+    tokio::signal::ctrl_c().await.unwrap()
+}
+```
+*/
 
 use futures_util::{SinkExt, StreamExt};
 use std::collections::HashMap;
