@@ -7,6 +7,7 @@ use crate::error::{ApiError, AuthError};
 use crate::types::filter::OrdersTopFilters;
 use crate::types::http::{APIV1Result, ApiResult};
 use crate::types::item::{Item as ItemObject, Order as OrderItem, OrderWithUser, OrdersTopResult};
+use crate::types::request::OrderUpdateParams;
 use crate::types::user::StatusType::Offline;
 use crate::types::user::{FullUser, StatusType};
 use serde::Serialize;
@@ -151,7 +152,16 @@ impl<State> Client<State> {
         Ok(total)
     }
 
-    pub async fn get_order_item(&mut self, order: Order) -> Result<Item<Regular>, ApiError> {
+    /**
+    Get the Item Type of an Order, fetches from updated list of items
+
+    # Arguments
+    - `order`: The order to get the type of
+
+    # Returns
+    A managed [`Item`][crate::client::item::Item] object
+    */
+    pub async fn get_order_item(&mut self, order: &Order) -> Result<Item<Regular>, ApiError> {
         if let Some(item) = self
             .get_items()
             .await?
@@ -162,6 +172,27 @@ impl<State> Client<State> {
         }
 
         Err(ApiError::Unknown("Item not found".to_string()))
+    }
+
+    /**
+    Get the order from an id
+
+    # Arguments
+    - `id`: An order ID
+
+    # Returns
+    A managed [`Order`][crate::client::order::Order] object
+    */
+    pub async fn get_order(&mut self, id: &str) -> Result<Order<Unowned>, ApiError> {
+        let order: Result<ApiResult<OrderWithUser>, ApiError> = self
+            .call_api(
+                Method::Get,
+                format!("/order/{}", id).as_str(),
+                None::<&NoBody>,
+            )
+            .await;
+
+        Ok(Order::new(&order?.data.order))
     }
 }
 
@@ -360,5 +391,57 @@ impl Client<Authenticated> {
     */
     pub fn create_websocket(&mut self) -> WsClientBuilder {
         WsClientBuilder::new(self.get_token(), self.get_device_id())
+    }
+
+    /**
+    Update order information
+
+    # Arguments
+    - `order`: The [`Order`][crate::client::order::Order] to update
+    
+    # Example
+    ```rust
+    use wf_market::{
+        client::Client,
+        utils::generate_device_id,
+        types::request::OrderUpdateParams,
+    };
+
+    async fn main() {
+        let mut client = {
+            // device_id should be stored and reused
+            Client::new()
+                .login("username", "password", generate_device_id().as_str())
+                .await.unwrap()
+        };
+        
+        if let Ok(orders) = client.my_orders().await {
+            for order in orders {
+                client.update_order(order, OrderUpdateParams {
+                    platinum: Some(1), // Make all our orders basically free!
+                    ..Default::default()
+                })
+            } 
+        }
+    }
+    ```
+
+    # Returns
+    The updated order
+    */
+    pub async fn update_order(
+        &mut self,
+        order: Order<Owned>,
+        args: OrderUpdateParams,
+    ) -> Result<Order<Owned>, ApiError> {
+        let order: Result<ApiResult<OrderItem>, ApiError> = self
+            .call_api(
+                Method::Patch,
+                format!("/order/{}", order.object.id).as_str(),
+                Some(&args),
+            )
+            .await;
+
+        Ok(Order::new_owned(&order?.data))
     }
 }

@@ -7,6 +7,7 @@ use serde::Serialize;
 pub enum Method {
     Get,
     Post,
+    Patch,
     Put,
     Delete,
 }
@@ -16,6 +17,7 @@ fn transform_method(method: Method) -> HttpMethod {
     match method {
         Method::Get => HttpMethod::GET,
         Method::Post => HttpMethod::POST,
+        Method::Patch => HttpMethod::PATCH,
         Method::Put => HttpMethod::PUT,
         Method::Delete => HttpMethod::DELETE,
     }
