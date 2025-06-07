@@ -10,6 +10,7 @@ use crate::types::user::{FullUser, StatusType};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::marker::PhantomData;
+use crate::client::ws::WsClientBuilder;
 use crate::types::filter::OrdersTopFilters;
 
 pub struct Unauthenticated;
@@ -197,8 +198,8 @@ impl Client<Unauthenticated> {
                             .map_err(|_| AuthError::ParsingError)?
                             .to_string();
                         
-                        let jwt = &token[3..]; // Remove the "JWT " from the token.
-                        let http = build_http(Some(format!("Bearer {}", jwt.clone())));
+                        let jwt = &token[4..]; // Remove the "JWT " from the token.
+                        let http = build_http(Some(format!("Bearer {}", jwt)));
 
                         let mut authed_client = Client {
                             http,
@@ -304,5 +305,15 @@ impl Client<Authenticated> {
     pub fn get_token(&mut self) -> String {
         // Only accessible on authed clients, if this panics we got hit by a cosmic particle
         self.token.clone().unwrap()
+    }
+    
+    /**
+    Create a WebSocket builder
+    
+    # Returns
+    A WsClient Builder
+    */
+    pub fn create_websocket(&mut self) -> WsClientBuilder {
+        WsClientBuilder::new(self.token.clone().unwrap())
     }
 }

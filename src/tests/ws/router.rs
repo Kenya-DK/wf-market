@@ -1,22 +1,18 @@
-use crate::client::ws::{Route, Router, WsMessage};
+use crate::client::ws::{Route};
 use crate::error::WsError;
 
 #[test]
 fn test_route_parsing_with_parameter() {
-    let route = Route::parse("@wfm|cmd/subscribe/newOrders:ok").unwrap();
-    assert_eq!(route.protocol, "@wfm");
-    assert_eq!(route.path, "cmd/subscribe/newOrders");
-    assert_eq!(route.parameter, Some("ok".to_string()));
-    assert_eq!(route.full_path(), "cmd/subscribe/newOrders:ok");
+    let route = Route::parse("@WF/subscribe/newOrders").unwrap();
+    assert_eq!(route.protocol, "@WF");
+    assert_eq!(route.path, "subscribe/newOrders");
 }
 
 #[test]
 fn test_route_parsing_without_parameter() {
-    let route = Route::parse("@wfm|cmd/subscribe/newOrders").unwrap();
-    assert_eq!(route.protocol, "@wfm");
-    assert_eq!(route.path, "cmd/subscribe/newOrders");
-    assert_eq!(route.parameter, None);
-    assert_eq!(route.full_path(), "cmd/subscribe/newOrders");
+    let route = Route::parse("@WF/subscribe/newOrders").unwrap();
+    assert_eq!(route.protocol, "@WF");
+    assert_eq!(route.path, "subscribe/newOrders");
 }
 
 #[test]
@@ -24,25 +20,8 @@ fn test_route_to_string() {
     let route_with_param = Route {
         protocol: "@wfm".to_string(),
         path: "cmd/subscribe/newOrders".to_string(),
-        parameter: Some("error".to_string()),
     };
-    assert_eq!(route_with_param.to_string(), "@wfm|cmd/subscribe/newOrders:error");
-
-    let route_without_param = Route {
-        protocol: "@wfm".to_string(),
-        path: "cmd/subscribe/newOrders".to_string(),
-        parameter: None,
-    };
-    assert_eq!(route_without_param.to_string(), "@wfm|cmd/subscribe/newOrders");
-}
-
-#[test]
-fn test_route_parsing_with_error_parameter() {
-    let route = Route::parse("@wfm|cmd/subscribe/newOrders:error").unwrap();
-    assert_eq!(route.protocol, "@wfm");
-    assert_eq!(route.path, "cmd/subscribe/newOrders");
-    assert_eq!(route.parameter, Some("error".to_string()));
-    assert_eq!(route.full_path(), "cmd/subscribe/newOrders:error");
+    assert_eq!(route_with_param.to_string(), "@wfm/cmd/subscribe/newOrders");
 }
 
 #[test]
@@ -60,7 +39,6 @@ fn test_route_to_string_without_parameter() {
     let route = Route {
         protocol: "@wfm".to_string(),
         path: "event/user/login".to_string(),
-        parameter: None,
     };
-    assert_eq!(route.to_string(), "@wfm|event/user/login");
+    assert_eq!(route.to_string(), "@wfm/event/user/login");
 }

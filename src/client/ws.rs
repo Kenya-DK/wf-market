@@ -7,27 +7,26 @@ Build a WebSocket Client to receive real-time information from Warframe Market
 ```rust
 use wf_market::{
     error::WsError,
-    client::ws::WsClient
+    client::ws::WsClient,
+    Client
 };
-
-struct GlobalInfo {
-    active_users: u32,
-}
 
 #[tokio::main]
 async fn main() -> Result<(), WsError> {
-    let client = WsClient::new()
-        .register_callback("internal/connected", |msg, _, _| {
-            println!("WebSocket has connected to the WFM API");
-            Ok(())
-        })?
-        .register_callback("event/reports/online", |msg, _, _| {
-            println!("Users Online: {}", msg.payload.unwrap().get("authorizedUsers").unwrap().as_i64());
+    let mut client = {
+        Client::new()
+            .login("user", "pass", "dev").await.unwrap()
+    };
+
+    let client = client.create_websocket()
+        .register_callback("MESSAGE/ONLINE_COUNT", |msg, _, _| {
+            let payload = msg.payload.clone().unwrap();
+            println!("Users Online: {}", payload.get("authorizedUsers").unwrap().as_i64());
             Ok(())
         })?
         .build().await?;
 
-    loop { } // Our client is not long-running, so to keep the WsClient in scope we need to never return
+    tokio::signal::ctrl_c().await.unwrap()
 }
 ```
 */
@@ -36,72 +35,47 @@ use futures_util::{SinkExt, StreamExt};
 use std::collections::HashMap;
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
-use serde::de::DeserializeOwned;
 use tokio_tungstenite::{connect_async};
 use tokio_tungstenite::tungstenite::{Error, Message, Utf8Bytes};
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use crate::error::WsError;
 
-pub(super) const WS_URL: &'static str = "wss://warframe.market/socket-v2";
+pub(super) const WS_URL: &'static str = "wss://warframe.market/socket?platform=pc";
+pub(super) const WS_PROTOCOL: &'static str = "@WS";
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct WsMessage {
-    pub route: String,
+    #[serde(rename = "type")]
+    pub message_type: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub payload: Option<serde_json::Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<String>,
-    #[serde(rename = "refId", skip_serializing_if = "Option::is_none")]
-    pub ref_id: Option<String>,
 }
 
-// Route structure with parameter support
+// Route structure for the new format
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Route {
     pub protocol: String,
     pub path: String,
-    pub parameter: Option<String>,
 }
 
 impl Route {
-    pub fn parse(route_str: &str) -> Result<Self, WsError> {
-        if let Some(pipe_pos) = route_str.find('|') {
-            let protocol = route_str[..pipe_pos].to_string();
-            let path_and_param = &route_str[pipe_pos + 1..];
-
-            // Check for parameter (after colon)
-            if let Some(colon_pos) = path_and_param.find(':') {
-                let path = path_and_param[..colon_pos].to_string();
-                let parameter = Some(path_and_param[colon_pos + 1..].to_string());
-                Ok(Route { protocol, path, parameter })
-            } else {
-                let path = path_and_param.to_string();
-                Ok(Route { protocol, path, parameter: None })
-            }
+    pub fn parse(type_str: &str) -> Result<Self, WsError> {
+        if let Some(slash_pos) = type_str.find('/') {
+            let protocol = type_str[..slash_pos].to_string();
+            let path = type_str[slash_pos + 1..].to_string();
+            Ok(Route { protocol, path })
         } else {
-            Err(WsError::InvalidPath(route_str.to_string()))
+            Err(WsError::InvalidPath(type_str.to_string()))
         }
     }
 
     pub fn to_string(&self) -> String {
-        match &self.parameter {
-            Some(param) => format!("{}|{}:{}", self.protocol, self.path, param),
-            None => format!("{}|{}", self.protocol, self.path),
-        }
+        format!("{}/{}", self.protocol, self.path)
     }
 
-    // Get the base path without parameter for routing
-    pub fn base_path(&self) -> &str {
+    pub fn path(&self) -> &str {
         &self.path
-    }
-
-    // Get the full path with parameter for exact matching
-    pub fn full_path(&self) -> String {
-        match &self.parameter {
-            Some(param) => format!("{}:{}", self.path, param),
-            None => self.path.clone(),
-        }
     }
 }
 
@@ -117,39 +91,28 @@ impl MessageSender {
         Ok(())
     }
 
-    pub fn send_response(
+    pub fn send_message_to_path(
         &self,
-        route: &str,
-        payload: serde_json::Value,
-        ref_id: &str
+        path: &str,
+        payload: serde_json::Value
     ) -> Result<(), WsError> {
         let message = WsMessage {
-            route: route.to_string(),
+            message_type: format!("{}/{}", WS_PROTOCOL, path),
             payload: Some(payload),
-            id: Some(uuid::Uuid::new_v4().to_string()),
-            ref_id: Some(ref_id.to_string()),
         };
         self.send_message(message)
     }
 
-    pub fn send_request(
-        &self,
-        route: &str,
-        payload: serde_json::Value
-    ) -> Result<String, WsError> {
-        let id = uuid::Uuid::new_v4().to_string();
+    pub fn send_message_to_path_no_payload(&self, path: &str) -> Result<(), WsError> {
         let message = WsMessage {
-            route: route.to_string(),
-            payload: Some(payload),
-            id: Some(id.clone()),
-            ref_id: None,
+            message_type: format!("{}/{}", WS_PROTOCOL, path),
+            payload: None,
         };
-        self.send_message(message)?;
-        Ok(id)
+        self.send_message(message)
     }
 }
 
-// Updated callback type to include sender and route info
+// Updated callback type
 pub type MessageCallback = Arc<dyn Fn(&WsMessage, &Route, &MessageSender) -> Result<(), WsError> + Send + Sync>;
 
 // Internal router
@@ -167,7 +130,7 @@ impl Router {
     // Internal reserved paths that the client uses
     fn get_reserved_paths() -> Vec<&'static str> {
         vec![
-            "cmd/auth/signIn",
+            "CONNECTION/ESTABLISHED",
         ]
     }
 
@@ -191,26 +154,26 @@ impl Router {
     }
 
     fn route_message(&self, message: &WsMessage, sender: &MessageSender) -> Result<(), WsError> {
-        let route = Route::parse(&message.route)?;
+        let route = Route::parse(&message.message_type)?;
+
+        // Only handle messages with our protocol
+        if route.protocol != WS_PROTOCOL {
+            println!("Ignoring message with different protocol: {}", route.protocol);
+            return Ok(());
+        }
 
         // Handle internal routes first
-        if Self::is_path_reserved(route.base_path()) {
+        if Self::is_path_reserved(route.path()) {
             self.handle_internal_route(&route, message, sender)?;
             return Ok(());
         }
 
-        // Try to find callback with routing priority:
-        // 1. Exact match with parameter (e.g., "cmd/subscribe/newOrders:ok")
-        // 2. Base path match (e.g., "cmd/subscribe/newOrders")
-
-        let callback = self.routes.get(&route.full_path())
-            .or_else(|| self.routes.get(route.base_path()));
-
-        if let Some(callback) = callback {
+        // Try to find callback for the path
+        if let Some(callback) = self.routes.get(route.path()) {
             callback(message, &route, sender)?;
         } else {
             // Optionally log unhandled routes
-            println!("No handler for route: {} (full: {})", route.base_path(), route.full_path());
+            println!("No handler for route: {}", route.path());
         }
 
         Ok(())
@@ -218,18 +181,12 @@ impl Router {
 
     // Handle internal client routes
     fn handle_internal_route(&self, route: &Route, message: &WsMessage, sender: &MessageSender) -> Result<(), WsError> {
-        match route.base_path() {
-            "cmd/auth/signIn" => {
-                println!("Handling internal auth sign in with parameter: {:?}", route.parameter);
-                // Example: Handle different auth responses based on parameter
-                match route.parameter.as_deref() {
-                    Some("ok") => println!("Auth successful"),
-                    Some("error") => println!("Auth failed"),
-                    _ => println!("Unknown auth response"),
-                }
+        match route.path() {
+            "CONNECTION/ESTABLISHED" => {
+                println!("Connection established");
             }
             _ => {
-                println!("Unhandled internal route: {} (parameter: {:?})", route.base_path(), route.parameter);
+                println!("Unhandled internal route: {}", route.path());
             }
         }
         Ok(())
@@ -239,20 +196,22 @@ impl Router {
 // WebSocket client builder
 pub struct WsClientBuilder {
     router: Router,
+    token: String,
 }
 
 impl WsClientBuilder {
-    fn new() -> Self {
+    pub(crate) fn new(token: String) -> Self {
         Self {
             router: Router::new(),
+            token,
         }
     }
 
-    /// Register a callback for a specific path with optional parameter
+    /// Register a callback for a specific path
     ///
     /// Examples:
-    /// - `register_callback("cmd/subscribe/newOrders", callback)` - matches any parameter
-    /// - `register_callback("cmd/subscribe/newOrders:ok", callback)` - matches only :ok parameter
+    /// - `register_callback("USER/SET_STATUS", callback)` - handles @WS/USER/SET_STATUS messages
+    /// - `register_callback("ORDERS/NEW", callback)` - handles @WS/ORDERS/NEW messages
     pub fn register_callback<F>(mut self, path: &str, callback: F) -> Result<Self, WsError>
     where
         F: Fn(&WsMessage, &Route, &MessageSender) -> Result<(), WsError> + Send + Sync + 'static,
@@ -269,12 +228,14 @@ impl WsClientBuilder {
     /// Build and start the WebSocket client
     pub async fn build(self) -> Result<WsClient, WsError> {
         let mut request = WS_URL.into_client_request().unwrap();
-        
+
         let headers = request.headers_mut();
-        headers.append("Sec-WebSocket-Protocol", "wfm".parse().unwrap());
-        // TODO: We probably need to require the developer to enter a useragent so not every app using this gets generalized as one and the same
+        // headers.append("Sec-WebSocket-Protocol", "wfm".parse().unwrap());
+        let cookie = format!("JWT={}", self.token);
+        println!("{}", cookie);
+        headers.append("Cookie", cookie.parse().unwrap());
         headers.append("User-Agent", "wf-market-rs".parse().unwrap());
-        
+
         let (ws_stream, _) = connect_async(request).await.map_err(|err| {
             println!("Failed to establish connection to {}: {}", WS_URL, err.to_string());
             match err {
@@ -285,20 +246,26 @@ impl WsClientBuilder {
                     }
                     print!("\n")
                 },
-                _ => unreachable!()
+                _ => println!("{:?}", err)
             }
             WsError::ConnectionError
         })?;
         let (mut write, mut read) = ws_stream.split();
 
+        println!("WebSocket handshake has been successfully completed");
+        
         // Create message channel
         let (tx, mut rx) = mpsc::unbounded_channel::<WsMessage>();
         let sender = MessageSender { tx };
+        
+        println!("Spawning writer task");
 
         // Spawn write task
         let write_task = tokio::spawn(async move {
+            println!("Spawned writer task");
             while let Some(message) = rx.recv().await {
                 if let Ok(json) = serde_json::to_string(&message) {
+                    println!("Sending message: {}", json);
                     if let Err(e) = write.send(Message::Text(Utf8Bytes::from(json))).await {
                         eprintln!("Failed to send message: {}", e);
                         break;
@@ -308,17 +275,14 @@ impl WsClientBuilder {
         });
 
         // Call connected callback if registered
-        if let Some(connected_callback) = self.router.routes.get("internal/connected") {
+        if let Some(connected_callback) = self.router.routes.get("CONNECTION/ESTABLISHED") {
             let route = Route {
-                protocol: "@internal".to_string(),
-                path: "internal/connected".to_string(),
-                parameter: None,
+                protocol: WS_PROTOCOL.to_string(),
+                path: "CONNECTION/ESTABLISHED".to_string(),
             };
             connected_callback(&WsMessage {
-                route: "@internal|internal/connected".to_string(),
-                payload: Some(serde_json::Value::from(true)),
-                id: Some("INTERNAL".to_string()),
-                ref_id: None,
+                message_type: format!("{}/CONNECTION/ESTABLISHED", WS_PROTOCOL),
+                payload: Some(serde_json::json!({"connected": true})),
             }, &route, &sender)?;
         }
 
@@ -328,6 +292,7 @@ impl WsClientBuilder {
         let read_task = tokio::spawn(async move {
             while let Some(message) = read.next().await {
                 if let Ok(message) = message {
+                    println!("Received message: {:?}", message);
                     match message {
                         Message::Text(text) => {
                             if let Err(e) = WsClient::handle_text_message(&router, &text, &sender_clone) {
@@ -358,11 +323,6 @@ pub struct WsClient {
 }
 
 impl WsClient {
-    /// Create a new WebSocket client builder
-    pub fn new() -> WsClientBuilder {
-        WsClientBuilder::new()
-    }
-
     pub(crate) fn handle_text_message(router: &Router, text: &str, sender: &MessageSender) -> Result<(), WsError> {
         let message: WsMessage = serde_json::from_str(text).map_err(|_| WsError::InvalidMessageReceived(text.to_string()))?;
         router.route_message(&message, sender)
@@ -377,26 +337,21 @@ impl WsClient {
         }
     }
 
-    pub fn send_response(
+    pub fn send_message_to_path(
         &self,
-        route: &str,
-        payload: serde_json::Value,
-        ref_id: &str
+        path: &str,
+        payload: serde_json::Value
     ) -> Result<(), WsError> {
         if let Some(sender) = &self.sender {
-            sender.send_response(route, payload, ref_id)
+            sender.send_message_to_path(path, payload)
         } else {
             Err(WsError::NotConnected)
         }
     }
 
-    pub fn send_request(
-        &self,
-        route: &str,
-        payload: serde_json::Value
-    ) -> Result<String, WsError> {
+    pub fn send_message_to_path_no_payload(&self, path: &str) -> Result<(), WsError> {
         if let Some(sender) = &self.sender {
-            sender.send_request(route, payload)
+            sender.send_message_to_path_no_payload(path)
         } else {
             Err(WsError::NotConnected)
         }
