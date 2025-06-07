@@ -3,6 +3,8 @@
 
 Build a WebSocket Client to receive real-time information from Warframe Market
 
+To build a new WsClient, please see the [`Client`][crate::Client] documentation
+
 ## Record active users
 ```rust
 use wf_market::{
