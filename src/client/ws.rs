@@ -232,7 +232,6 @@ impl WsClientBuilder {
         let headers = request.headers_mut();
         // headers.append("Sec-WebSocket-Protocol", "wfm".parse().unwrap());
         let cookie = format!("JWT={}", self.token);
-        println!("{}", cookie);
         headers.append("Cookie", cookie.parse().unwrap());
         headers.append("User-Agent", "wf-market-rs".parse().unwrap());
 
@@ -251,21 +250,15 @@ impl WsClientBuilder {
             WsError::ConnectionError
         })?;
         let (mut write, mut read) = ws_stream.split();
-
-        println!("WebSocket handshake has been successfully completed");
         
         // Create message channel
         let (tx, mut rx) = mpsc::unbounded_channel::<WsMessage>();
         let sender = MessageSender { tx };
-        
-        println!("Spawning writer task");
 
         // Spawn write task
         let write_task = tokio::spawn(async move {
-            println!("Spawned writer task");
             while let Some(message) = rx.recv().await {
                 if let Ok(json) = serde_json::to_string(&message) {
-                    println!("Sending message: {}", json);
                     if let Err(e) = write.send(Message::Text(Utf8Bytes::from(json))).await {
                         eprintln!("Failed to send message: {}", e);
                         break;
@@ -292,7 +285,6 @@ impl WsClientBuilder {
         let read_task = tokio::spawn(async move {
             while let Some(message) = read.next().await {
                 if let Ok(message) = message {
-                    println!("Received message: {:?}", message);
                     match message {
                         Message::Text(text) => {
                             if let Err(e) = WsClient::handle_text_message(&router, &text, &sender_clone) {
