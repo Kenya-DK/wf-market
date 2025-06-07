@@ -184,7 +184,7 @@ impl<State> Client<State> {
     A managed [`Order`][crate::client::order::Order] object
     */
     pub async fn get_order(&mut self, id: &str) -> Result<Order<Unowned>, ApiError> {
-        let order: Result<ApiResult<OrderWithUser>, ApiError> = self
+        let order: Result<ApiResult<OrderItem>, ApiError> = self
             .call_api(
                 Method::Get,
                 format!("/order/{}", id).as_str(),
@@ -192,7 +192,7 @@ impl<State> Client<State> {
             )
             .await;
 
-        Ok(Order::new(&order?.data.order))
+        Ok(Order::new(&order?.data))
     }
 }
 
