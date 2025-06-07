@@ -24,7 +24,10 @@ pub struct Client<State = Unauthenticated> {
     pub orders: Vec<Order<Owned>>,
     /// Status of the logged in user, updated via WebSocket
     pub status: StatusType,
+    
     token: Option<String>,
+    device_id: Option<String>,
+    
     _state: PhantomData<State>,
 }
 
@@ -149,6 +152,7 @@ impl Client<Unauthenticated> {
             orders: Vec::new(),
             status: Offline,
             token: None,
+            device_id: None,
             _state: PhantomData,
         }
     }
@@ -207,6 +211,7 @@ impl Client<Unauthenticated> {
                             orders: Vec::new(),
                             status: data.payload.user.status_type,
                             token: Some(jwt.to_string()),
+                            device_id: Some(device_id.parse().unwrap()),
                             _state: PhantomData,
                         };
 
@@ -308,12 +313,23 @@ impl Client<Authenticated> {
     }
     
     /**
+    Returns the clients device id
+
+    # Returns
+    The Device ID used when authenticating
+    */
+    pub fn get_device_id(&mut self) -> String {
+        // Again, panics, cosmic particle, you get the gist of it now
+        self.device_id.clone().unwrap()
+    }
+    
+    /**
     Create a WebSocket builder
     
     # Returns
     A WsClient Builder
     */
     pub fn create_websocket(&mut self) -> WsClientBuilder {
-        WsClientBuilder::new(self.token.clone().unwrap())
+        WsClientBuilder::new(self.get_token(), self.get_device_id())
     }
 }
