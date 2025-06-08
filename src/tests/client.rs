@@ -26,14 +26,7 @@ async fn test_filtered_orders_top() {
     
     let filters = OrdersTopFilters {
         rank: Some(10),
-        rank_lt: None,
-        charges: None,
-        charges_lt: None,
-        amber_stars: None,
-        amber_stars_lt: None,
-        cyan_stars: None,
-        cyan_stars_lt: None,
-        subtype: None,
+        ..Default::default()
     };
 
     let mods = client.get_orders_top(TEST_MOD, Some(filters)).await.unwrap();

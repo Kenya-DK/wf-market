@@ -1,6 +1,7 @@
 use serde::Serialize;
+use crate::types::user::StatusType;
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Default, Serialize)]
 pub struct OrdersTopFilters {
     pub rank: Option<u32>,
     #[serde(rename = "rankLt")]
@@ -20,5 +21,8 @@ pub struct OrdersTopFilters {
     #[serde(rename = "cyanStarsLt")]
     pub cyan_stars_lt: Option<u32>,
     
-    pub subtype: Option<String>
+    pub subtype: Option<String>,
+    
+    #[serde(skip)]
+    pub user_activity: Option<StatusType>,
 }

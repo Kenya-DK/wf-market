@@ -118,7 +118,7 @@ impl<State> Client<State> {
         slug: &str,
         filters: Option<OrdersTopFilters>,
     ) -> Result<Vec<Order<Unowned>>, ApiError> {
-        let query: String = if let Some(filters) = filters {
+        let query: String = if let Some(filters) = filters.clone() {
             let params = serde_urlencoded::to_string(filters)
                 .map_err(|_| ApiError::ParsingError("Unable to serialize filters".to_string()))?;
             format!("?{}", params)
@@ -135,15 +135,21 @@ impl<State> Client<State> {
             .await;
 
         let data = items?.data;
+        
+        let is_filtering_status = if let Some(filters) = filters.clone() {
+            filters.user_activity.is_some()
+        } else { false };
 
         let buy: Vec<Order<Unowned>> = data
             .buy
             .iter()
+            .filter(|o| is_filtering_status && o.user.status_type == filters.clone().unwrap().user_activity.unwrap())
             .map(|order| Order::new(&order.downgrade()))
             .collect();
         let sell: Vec<Order<Unowned>> = data
             .sell
             .iter()
+            .filter(|o| is_filtering_status && o.user.status_type == filters.clone().unwrap().user_activity.unwrap())
             .map(|order| Order::new(&order.downgrade()))
             .collect();
 

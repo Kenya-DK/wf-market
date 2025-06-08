@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-#[derive(Clone, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Deserialize, Eq, PartialEq, Debug)]
 pub enum StatusType {
     #[serde(rename = "offline")]
     Offline,
@@ -36,5 +36,7 @@ pub struct MinimalUser {
     pub id: String,
     #[serde(rename = "ingame_name", alias = "ingameName")]
     pub name: String,
-    pub reputation: i32
+    pub reputation: i32,
+    #[serde(rename = "status", default = "default_status_type")]
+    pub status_type: StatusType,
 }
