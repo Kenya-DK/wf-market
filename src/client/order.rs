@@ -26,6 +26,7 @@ async fn main() {
 */
 
 use std::marker::PhantomData;
+use chrono::{DateTime, Utc};
 use crate::types::item::{Order as OrderItem};
 
 pub struct Owned;
@@ -39,9 +40,12 @@ pub struct Order<State = Unowned> {
 }
 
 impl<State> Order<State> {
-    pub fn get_type(&mut self) -> OrderItem {
+    pub fn get_type(&self) -> OrderItem {
         self.object.clone()
     }
+    pub fn get_platinum(&self) -> u32 { self.object.platinum }
+    pub fn updated_at(&self) -> DateTime<Utc> { self.object.updated_at.parse().unwrap_or_default() }
+    pub fn created_at(&self) -> DateTime<Utc> { self.object.created_at.parse().unwrap_or_default() }
 }
 
 impl Order<Unowned> {
