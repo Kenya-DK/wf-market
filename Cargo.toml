@@ -1,6 +1,6 @@
 [package]
 name = "wf-market"
-version = "0.1.8"
+version = "0.1.9"
 edition = "2024"
 description = "A small Rust library to interact with Warframe Market APIs"
 repository = "https://github.com/KibbeWater/wf-market"
