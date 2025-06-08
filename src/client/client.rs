@@ -355,7 +355,7 @@ impl Client<Authenticated> {
     # Returns
     - An Owned order
     */
-    pub fn take_order(&mut self, order: &mut Order<Unowned>) -> Result<Order<Owned>, ApiError> {
+    pub fn take_order(&mut self, order: Order<Unowned>) -> Result<Order<Owned>, ApiError> {
         if self
             .orders
             .iter()
