@@ -6,7 +6,7 @@ pub enum StatusType {
     Offline,
     #[serde(rename = "online")]
     Online,
-    #[serde(rename = "in_game")]
+    #[serde(rename = "in_game", alias = "ingame")]
     InGame,
 }
 

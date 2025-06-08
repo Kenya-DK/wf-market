@@ -8,7 +8,6 @@ use crate::types::filter::OrdersTopFilters;
 use crate::types::http::{APIV1Result, ApiResult};
 use crate::types::item::{Item as ItemObject, Order as OrderItem, OrderWithUser, OrdersTopResult};
 use crate::types::request::OrderUpdateParams;
-use crate::types::user::StatusType::Offline;
 use crate::types::user::{FullUser, StatusType};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -214,7 +213,7 @@ impl Client<Unauthenticated> {
             http: build_http(None),
             user: None,
             orders: Vec::new(),
-            status: Offline,
+            status: StatusType::Offline,
             items_cache: Vec::new(),
             token: None,
             device_id: None,
