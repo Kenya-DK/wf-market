@@ -349,13 +349,14 @@ impl Client<Authenticated> {
     # Returns
     - An Owned order
     */
-    pub fn take_order(&mut self, order: Order<Unowned>) -> Result<Order<Owned>, ApiError> {
-        if let Some(users_order) = self
+    pub fn take_order(&mut self, order: &mut Order<Unowned>) -> Result<Order<Owned>, ApiError> {
+        if self
             .orders
             .iter()
             .find(|_order| _order.object.id == order.object.id)
+            .is_some()
         {
-            Ok(Order::new_owned(&users_order.object))
+            Ok(Order::new_owned(&order.get_type()))
         } else {
             Err(ApiError::Unauthorized)
         }
@@ -398,7 +399,7 @@ impl Client<Authenticated> {
 
     # Arguments
     - `order`: The [`Order`][crate::client::order::Order] to update
-    
+
     # Example
     ```rust
     use wf_market::{
@@ -414,14 +415,14 @@ impl Client<Authenticated> {
                 .login("username", "password", generate_device_id().as_str())
                 .await.unwrap()
         };
-        
+
         if let Ok(orders) = client.my_orders().await {
             for order in orders {
                 client.update_order(order, OrderUpdateParams {
                     platinum: Some(1), // Make all our orders basically free!
                     ..Default::default()
                 })
-            } 
+            }
         }
     }
     ```
