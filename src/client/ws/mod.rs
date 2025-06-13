@@ -349,18 +349,18 @@ impl WsClientBuilder {
         tokio::spawn(async move {
             let _ = tokio::join!(read_task, write_task);
         });
-        
+
         let ws_client = WsClient {
             sender: Some(sender),
         };
-        
+
         // Send authentication
         let auth_payload = json!({
             "token": self.token,
             "deviceId": self.device_id,
         });
         ws_client.send_request("@wfm|cmd/auth/signIn", auth_payload)?;
-            
+
         Ok(ws_client)
     }
 }
@@ -407,7 +407,7 @@ impl WsClient {
         if route_parsed.protocol == "internal" {
             return Err(WsError::ReservedPath("Can't send on internal routes".to_string()))
         }
-        
+
         if let Some(sender) = &self.sender {
             sender.send_request(route, payload)
         } else {

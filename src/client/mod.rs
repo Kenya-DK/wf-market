@@ -30,12 +30,276 @@ async fn main() {
 ```
 */
 
-mod client;
-pub(super) mod utils;
-pub(super) mod http;
-
-pub mod order;
-pub mod item;
+// Submodules
+mod order;
+mod item;
+mod constants;
+mod auth;
+mod utils;
 pub mod ws;
 
-pub use client::*;
+use serde::Serialize;
+use crate::error::ApiError;
+use std::marker::PhantomData;
+use std::sync::Arc;
+use governor::clock::DefaultClock;
+use governor::RateLimiter;
+use governor::state::{InMemoryState, NotKeyed};
+use crate::types::user::{FullUser, StatusType};
+use reqwest::Method as HttpMethod;
+use crate::types::item::{Item as ItemObject, Order as OrderItem, OrderWithUser, OrdersTopResult};
+use crate::types::filter::OrdersTopFilters;
+use crate::types::http::ApiResult;
+
+use constants::*;
+use utils::*;
+pub use item::*;
+pub use order::*;
+pub use auth::*;
+
+pub struct Unauthenticated;
+pub struct Authenticated;
+
+pub struct Client<State = Unauthenticated> {
+    pub(crate) http: reqwest::Client,
+    pub user: Option<FullUser>,
+    pub orders: Vec<Order<Owned>>,
+    pub status: StatusType,
+    items_cache: Vec<Item>,
+    token: Option<String>,
+    device_id: Option<String>,
+    limiter: Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>,
+    _state: PhantomData<State>,
+}
+
+#[derive(Serialize)]
+struct NoBody;
+
+pub enum Method {
+    Get,
+    Post,
+    Patch,
+    Put,
+    Delete,
+}
+
+impl<State> Client<State> {
+    /**
+    INTERNAL: Makes a request to the API, returning the response as a deserialized type.
+
+
+    # Arguments
+    - `method`: The HTTP method to use (GET, POST, PUT, DELETE).
+    - `path`: The path to the API endpoint. (e.g., "/me").
+    - `body`: An optional body to send with the request, serializable as JSON.
+
+    # Returns
+    - A `Result` containing the deserialized response or an `ApiError` on failure.
+    */
+    pub(crate) async fn call_api<T: serde::de::DeserializeOwned>(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<&impl Serialize>,
+    ) -> Result<T, ApiError> {
+        let builder = self
+            .http
+            .request(transform_method(method), BASE_URL.to_owned() + path);
+
+        let builder = if let Some(body) = body {
+            builder.json(body)
+        } else {
+            builder
+        };
+
+        self.limiter.until_ready().await;
+
+        match builder.send().await {
+            Ok(resp) => {
+                let body = resp
+                    .text()
+                    .await
+                    .map_err(|_| ApiError::Unknown("Error".to_string()))?;
+                let data = serde_json::from_str::<T>(&body);
+
+                match data {
+                    Ok(data) => Ok(data),
+                    Err(err) => {
+                        Err(ApiError::ParsingError(format!("Error Parsing: {:?}", err).to_string()))
+                    },
+                }
+            }
+            Err(_) => Err(ApiError::RequestError),
+        }
+    }
+
+    /**
+    Fetch all listed items from the WFM API
+
+    # Returns
+    List of all listed items
+    */
+    pub async fn get_items(&mut self) -> Result<Vec<Item<Regular>>, ApiError> {
+        if !self.items_cache.is_empty() {
+            let mut new_items = Vec::new();
+            new_items.clone_from(&self.items_cache);
+            return Ok(new_items);
+        }
+
+        let items: Result<ApiResult<Vec<ItemObject>>, ApiError> =
+            self.call_api(Method::Get, "/items", None::<&NoBody>).await;
+
+        Ok(items?.data.iter().map(|item| Item::new(item)).collect())
+    }
+
+    /**
+    Fetch an item by an identifiable slug
+
+    # Returns
+    Full item object (currently the same from `get_items()`)
+    */
+    pub async fn get_item(&mut self, slug: &str) -> Result<Item<Regular>, ApiError> {
+        let items: Result<ApiResult<ItemObject>, ApiError> = self
+            .call_api(
+                Method::Get,
+                format!("/item/{}", slug).as_str(),
+                None::<&NoBody>,
+            )
+            .await;
+
+        Ok(Item::new(&items?.data))
+    }
+
+    /**
+    Fetch all orders from users online within the last 7 days
+
+    # Arguments
+    - `slug`: The item whose orders you want to fetch
+
+    # Returns
+    A list of orders
+    */
+    pub async fn get_orders(&mut self, slug: &str) -> Result<Vec<Order<Unowned>>, ApiError> {
+        let items: Result<ApiResult<Vec<OrderWithUser>>, ApiError> = self
+            .call_api(
+                Method::Get,
+                format!("/orders/item/{}", slug).as_str(),
+                None::<&NoBody>,
+            )
+            .await;
+
+        Ok(items?
+            .data
+            .iter()
+            .map(|order| Order::new(&order.downgrade()))
+            .collect())
+    }
+
+    /**
+    Fetch the top 5 orders for the specified slug
+
+    # Arguments
+    - `slug`: The item whose orders you want to fetch
+
+    # Returns
+    Total of 10 orders, top 5 buy/sell orders
+    */
+    pub async fn get_orders_top(
+        &mut self,
+        slug: &str,
+        filters: Option<OrdersTopFilters>,
+    ) -> Result<Vec<Order<Unowned>>, ApiError> {
+        let query: String = if let Some(filters) = filters.clone() {
+            let params = serde_urlencoded::to_string(filters)
+                .map_err(|_| ApiError::ParsingError("Unable to serialize filters".to_string()))?;
+            format!("?{}", params)
+        } else {
+            String::new()
+        };
+
+        let items: Result<ApiResult<OrdersTopResult>, ApiError> = self
+            .call_api(
+                Method::Get,
+                format!("/orders/item/{}/top{}", slug, query).as_str(),
+                None::<&NoBody>,
+            )
+            .await;
+
+        let data = items?.data;
+
+        let is_filtering_status = if let Some(filters) = filters.clone() {
+            filters.user_activity.is_some()
+        } else { false };
+
+        let buy: Vec<Order<Unowned>> = data
+            .buy
+            .iter()
+            .filter(|o| is_filtering_status && o.user.status_type == filters.clone().unwrap().user_activity.unwrap())
+            .map(|order| Order::new(&order.downgrade()))
+            .collect();
+        let sell: Vec<Order<Unowned>> = data
+            .sell
+            .iter()
+            .filter(|o| is_filtering_status && o.user.status_type == filters.clone().unwrap().user_activity.unwrap())
+            .map(|order| Order::new(&order.downgrade()))
+            .collect();
+
+        let total: Vec<Order<Unowned>> = [buy, sell].concat();
+
+        Ok(total)
+    }
+
+    /**
+    Get the Item Type of an Order, fetches from updated list of items
+
+    # Arguments
+    - `order`: The order to get the type of
+
+    # Returns
+    A managed [`Item`][crate::client::item::Item] object
+    */
+    pub async fn get_order_item(&mut self, order: &Order) -> Result<Item<Regular>, ApiError> {
+        if let Some(item) = self
+            .get_items()
+            .await?
+            .iter()
+            .find(|i| i.get_type().id == order.object.item_id)
+        {
+            return Ok(item.clone());
+        }
+
+        Err(ApiError::Unknown("Item not found".to_string()))
+    }
+
+    /**
+    Get the order from an id
+
+    # Arguments
+    - `id`: An order ID
+
+    # Returns
+    A managed [`Order`][crate::client::order::Order] object
+    */
+    pub async fn get_order(&mut self, id: &str) -> Result<Order<Unowned>, ApiError> {
+        let order: Result<ApiResult<OrderItem>, ApiError> = self
+            .call_api(
+                Method::Get,
+                format!("/order/{}", id).as_str(),
+                None::<&NoBody>,
+            )
+            .await;
+
+        Ok(Order::new(&order?.data))
+    }
+}
+
+// Honestly idk why i didn't just use reqwest::Method directly, but here we are
+fn transform_method(method: Method) -> HttpMethod {
+    match method {
+        Method::Get => HttpMethod::GET,
+        Method::Post => HttpMethod::POST,
+        Method::Patch => HttpMethod::PATCH,
+        Method::Put => HttpMethod::PUT,
+        Method::Delete => HttpMethod::DELETE,
+    }
+}

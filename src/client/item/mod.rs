@@ -55,11 +55,11 @@ impl<State> Item<State> {
     pub fn get_type(&self) -> ItemType {
         self.object.clone()
     }
-    
+
     pub fn get_slug(&self) -> String {
         self.object.slug.clone()
     }
-    
+
     pub fn get_name(&self) -> String {
         if let Some(en) = self.object.i18n.get("en") {
             en.name.clone()
@@ -74,7 +74,7 @@ impl Item<Regular> {
             state: Regular,
         }
     }
-    
+
     pub fn to_sculpture(&self) -> Result<Item<Sculpture>, ApiError> {
         let cyan_stars = if let Some(cyan) = self.object.max_cyan_stars {
             cyan
@@ -82,7 +82,7 @@ impl Item<Regular> {
         let amber_stars = if let Some(amber) = self.object.max_amber_stars {
             amber
         } else { 0 };
-        
+
         if let (Some(base_endo), Some(endo_multiplier)) = (
             self.object.base_endo, self.object.endo_multiplier) {
             Ok(Item {
@@ -94,11 +94,11 @@ impl Item<Regular> {
                     endo_multiplier,
                 }
             })
-        } else { 
+        } else {
             Err(ApiError::ParsingError(String::from("Item is not an Ayatan Sculpture")))
         }
     }
-    
+
     pub fn is_sculpture(&self) -> bool {
         self.object.base_endo.is_some() && self.object.endo_multiplier.is_some()
     }
@@ -111,11 +111,11 @@ impl Item<Regular> {
                     rank,
                 }
             })
-        } else { 
+        } else {
             Err(ApiError::ParsingError(String::from("Item is not a Mod")))
         }
     }
-    
+
     pub fn is_mod(&self) -> bool {
         self.object.max_rank.is_some()
     }
@@ -130,11 +130,11 @@ impl Item<Mod> {
 impl Item<Sculpture> {
     /**
     Calculate the value of an Ayatan Sculpture based on installed Ayatan Stars
-    
+
     # Arguments
     - `cyan_stars`: Number of installed Cyan Stars, a value of None uses the max value
     - `amber_stars`: Number of installed Amber Stars, a value of None uses the max value
-    
+
     # Returns
     The total endo value of a sculpture with defined amount of stars installed
     */
@@ -142,19 +142,19 @@ impl Item<Sculpture> {
         let base: f32 = self.state.base_endo as f32;
         let multiplier = self.state.endo_multiplier;
         let sockets = self.state.amber_stars + self.state.cyan_stars;
-        
+
         let cyan = if cyan_stars.is_some() {
             cyan_stars.unwrap()
-        } else { 
+        } else {
             self.state.cyan_stars
         };
-        
+
         let amber = if amber_stars.is_some() {
             amber_stars.unwrap()
-        } else { 
+        } else {
             self.state.amber_stars
         };
-        
+
         if sockets == 0 {
             panic!("Ayatan Sculpture has an invalid amount of sockets");
         }

@@ -1,5 +1,9 @@
-use serde::Deserialize;
 use crate::types::user::FullUser;
+use governor::clock::DefaultClock;
+use governor::state::{InMemoryState, NotKeyed};
+use governor::{Quota, RateLimiter};
+use serde::Deserialize;
+use std::num::NonZeroU32;
 
 #[derive(Deserialize)]
 pub(super) struct AuthResp {
@@ -25,5 +29,13 @@ pub(super) fn build_http(auth: Option<String>) -> reqwest::Client {
 
     reqwest::Client::builder()
         .default_headers(headers)
-        .build().unwrap()
+        .build()
+        .unwrap()
+}
+
+/**
+INTERNAL: Build the rate limiter for throttling outgoing requests to max allowed speeds
+*/
+pub(super) fn build_limiter(rps: NonZeroU32) -> RateLimiter<NotKeyed, InMemoryState, DefaultClock> {
+    RateLimiter::direct(Quota::per_second(rps))
 }
