@@ -59,6 +59,8 @@ pub struct Item {
     pub rarity: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vaulted: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ducats: Option<u32>,
     
     // MODS
     #[serde(rename = "maxRank", skip_serializing_if = "Option::is_none")]
