@@ -139,7 +139,7 @@ impl<State> Client<State> {
     # Returns
     List of all listed items
     */
-    pub async fn get_items(&mut self) -> Result<Vec<Item<Regular>>, ApiError> {
+    pub async fn get_items(&self) -> Result<Vec<Item<Regular>>, ApiError> {
         if !self.items_cache.is_empty() {
             let mut new_items = Vec::new();
             new_items.clone_from(&self.items_cache);
@@ -158,7 +158,7 @@ impl<State> Client<State> {
     # Returns
     Full item object (currently the same from `get_items()`)
     */
-    pub async fn get_item(&mut self, slug: &str) -> Result<Item<Regular>, ApiError> {
+    pub async fn get_item(&self, slug: &str) -> Result<Item<Regular>, ApiError> {
         let items: Result<ApiResult<ItemObject>, ApiError> = self
             .call_api(
                 Method::Get,
@@ -179,7 +179,7 @@ impl<State> Client<State> {
     # Returns
     A list of orders
     */
-    pub async fn get_orders(&mut self, slug: &str) -> Result<Vec<Order<Unowned>>, ApiError> {
+    pub async fn get_orders(&self, slug: &str) -> Result<Vec<Order<Unowned>>, ApiError> {
         let items: Result<ApiResult<Vec<OrderWithUser>>, ApiError> = self
             .call_api(
                 Method::Get,
@@ -205,7 +205,7 @@ impl<State> Client<State> {
     Total of 10 orders, top 5 buy/sell orders
     */
     pub async fn get_orders_top(
-        &mut self,
+        &self,
         slug: &str,
         filters: Option<OrdersTopFilters>,
     ) -> Result<Vec<Order<Unowned>>, ApiError> {
@@ -258,7 +258,7 @@ impl<State> Client<State> {
     # Returns
     A managed [`Item`][crate::client::item::Item] object
     */
-    pub async fn get_order_item(&mut self, order: &Order) -> Result<Item<Regular>, ApiError> {
+    pub async fn get_order_item(&self, order: &Order) -> Result<Item<Regular>, ApiError> {
         if let Some(item) = self
             .get_items()
             .await?
@@ -280,7 +280,7 @@ impl<State> Client<State> {
     # Returns
     A managed [`Order`][crate::client::order::Order] object
     */
-    pub async fn get_order(&mut self, id: &str) -> Result<Order<Unowned>, ApiError> {
+    pub async fn get_order(&self, id: &str) -> Result<Order<Unowned>, ApiError> {
         let order: Result<ApiResult<OrderItem>, ApiError> = self
             .call_api(
                 Method::Get,

@@ -144,7 +144,7 @@ impl Client<Authenticated> {
     # Returns
     List of all users orders
     */
-    pub async fn my_orders(&mut self) -> Result<Vec<Order<Owned>>, ApiError> {
+    pub async fn my_orders(&self) -> Result<Vec<Order<Owned>>, ApiError> {
         let items: Result<ApiResult<Vec<OrderItem>>, ApiError> = self
             .call_api(Method::Get, "/orders/my", None::<&NoBody>)
             .await;
@@ -169,7 +169,7 @@ impl Client<Authenticated> {
     # Returns
     - An Owned order
     */
-    pub fn take_order(&mut self, order: Order<Unowned>) -> Result<Order<Owned>, ApiError> {
+    pub fn take_order(&self, order: Order<Unowned>) -> Result<Order<Owned>, ApiError> {
         if self
             .orders
             .iter()
@@ -188,7 +188,7 @@ impl Client<Authenticated> {
     # Returns
     The users JWT token
     */
-    pub fn get_token(&mut self) -> String {
+    pub fn get_token(&self) -> String {
         // Only accessible on authed clients, if this panics we got hit by a cosmic particle
         self.token.clone().unwrap()
     }
@@ -199,7 +199,7 @@ impl Client<Authenticated> {
     # Returns
     The Device ID used when authenticating
     */
-    pub fn get_device_id(&mut self) -> String {
+    pub fn get_device_id(&self) -> String {
         // Again, panics, cosmic particle, you get the gist of it now
         self.device_id.clone().unwrap()
     }
@@ -210,7 +210,7 @@ impl Client<Authenticated> {
     # Returns
     A WsClient Builder
     */
-    pub fn create_websocket(&mut self) -> WsClientBuilder {
+    pub fn create_websocket(&self) -> WsClientBuilder {
         WsClientBuilder::new(self.get_token(), self.get_device_id())
     }
 
