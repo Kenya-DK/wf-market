@@ -25,9 +25,9 @@ async fn main() {
 ```
 */
 
-use std::marker::PhantomData;
-use chrono::{DateTime, Utc};
 use crate::types::item::{Order as OrderItem, OrderType};
+use chrono::{DateTime, Utc};
+use std::marker::PhantomData;
 
 pub struct Owned;
 #[derive(Clone)]
@@ -40,15 +40,27 @@ pub struct Order<State = Unowned> {
 }
 
 impl<State> Order<State> {
-    pub fn get_id(&self) -> String { self.object.id.clone() }
+    pub fn get_id(&self) -> String {
+        self.object.id.clone()
+    }
     pub fn get_type(&self) -> OrderItem {
         self.object.clone()
     }
-    pub fn get_platinum(&self) -> u32 { self.object.platinum }
-    pub fn updated_at(&self) -> DateTime<Utc> { self.object.updated_at.parse().unwrap_or_default() }
-    pub fn created_at(&self) -> DateTime<Utc> { self.object.created_at.parse().unwrap_or_default() }
-    pub fn get_visible(&self) -> bool { self.object.visible }
-    pub fn get_sell_type(&self) -> OrderType { self.object.order_type }
+    pub fn get_platinum(&self) -> u32 {
+        self.object.platinum
+    }
+    pub fn updated_at(&self) -> DateTime<Utc> {
+        self.object.updated_at.parse().unwrap_or_default()
+    }
+    pub fn created_at(&self) -> DateTime<Utc> {
+        self.object.created_at.parse().unwrap_or_default()
+    }
+    pub fn get_visible(&self) -> bool {
+        self.object.visible
+    }
+    pub fn get_sell_type(&self) -> OrderType {
+        self.object.order_type
+    }
 }
 
 impl Order<Unowned> {

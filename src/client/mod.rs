@@ -167,7 +167,7 @@ impl<State> Client<State> {
                 match data {
                     Ok(data) => Ok(data),
                     Err(err) => Err(ApiError::ParsingError(
-                        format!("Error Parsing: {:?}", err).to_string(),
+                        format!("Error Parsing: {:?}, Body: {}", err, body).to_string(),
                     )),
                 }
             }
