@@ -8,4 +8,5 @@ pub mod http;
 pub mod item;
 pub mod request;
 pub mod riven;
+pub mod transaction;
 pub mod user;

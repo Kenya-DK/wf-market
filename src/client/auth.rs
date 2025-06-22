@@ -1,9 +1,13 @@
-use std::collections::HashMap;
+use serde_json::json;
+
+use super::*;
 use crate::client::ws::WsClientBuilder;
 use crate::error::AuthError;
 use crate::types::http::APIV1Result;
+use crate::types::request::OrderCreationRequest;
 use crate::types::request::OrderUpdateParams;
-use super::*;
+use crate::types::transaction::Transaction;
+use std::collections::HashMap;
 
 impl Client<Unauthenticated> {
     /**
@@ -103,7 +107,12 @@ impl Client<Unauthenticated> {
         }
     }
 
-    fn build_auth_payload<'a>(&self, username: &'a str, password: &'a str, device_id: &'a str) -> HashMap<&'a str, &'a str> {
+    fn build_auth_payload<'a>(
+        &self,
+        username: &'a str,
+        password: &'a str,
+        device_id: &'a str,
+    ) -> HashMap<&'a str, &'a str> {
         let mut map = HashMap::new();
         map.insert("auth_type", "header");
         map.insert("email", username);
@@ -266,5 +275,69 @@ impl Client<Authenticated> {
             .await;
 
         Ok(Order::new_owned(&order?.data))
+    }
+
+    /**
+     * Create a new order
+     * # Arguments
+     * - `args`: The [`OrderCreationRequest`][crate::types::request::OrderCreationRequest] to create the order with
+     * # Returns
+     * The created order
+     */
+    pub async fn create_order(&self, args: OrderCreationRequest) -> Result<Order<Owned>, ApiError> {
+        let order: Result<ApiResult<OrderItem>, ApiError> =
+            self.call_api(Method::Post, "/order", Some(&args)).await;
+
+        Ok(Order::new_owned(&order?.data))
+    }
+    /**
+    Close a portion or all of an existing order.
+    Allows you to close part of an open order by specifying a quantity to reduce.
+    For example, if your order was initially created with a quantity of 20, and you send a request to close 8 units, the remaining quantity will be 12.
+    If you close the entire remaining quantity, the order will be considered fully closed and removed.
+    # Arguments
+    - `order_id`: The ID of the order to delete
+    - `quantity`: The quantity of the order to delete
+    # Returns
+    - `Ok(Transaction)` if the order was successfully deleted
+    - `Err(ApiError)` if there was an error deleting the order
+    */
+
+    pub async fn close_order(
+        &self,
+        order_id: &str,
+        quantity: u32,
+    ) -> Result<Transaction, ApiError> {
+        let transaction: Result<ApiResult<Transaction>, ApiError> = self
+            .call_api(
+                Method::Post,
+                format!("/order/{}/close", order_id).as_str(),
+                Some(&json!({
+                    "quantity": quantity
+                })),
+            )
+            .await;
+
+        Ok(transaction?.data)
+    }
+
+    /**
+     * Delete an order
+     * # Arguments
+     * - `order_id`: The ID of the order to delete
+     * # Returns
+     * - `Ok(Order)` if the order was successfully deleted
+     * - `Err(ApiError)` if there was an error deleting the order
+     */
+    pub async fn delete_order(&self, order_id: &str) -> Result<Order, ApiError> {
+        let order: Result<ApiResult<OrderItem>, ApiError> = self
+            .call_api(
+                Method::Delete,
+                format!("/order/{}", order_id).as_str(),
+                None::<&NoBody>,
+            )
+            .await;
+
+        Ok(Order::new(&order?.data))
     }
 }
