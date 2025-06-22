@@ -9,27 +9,31 @@ const TEST_MOD: &str = "primed_flow";
 #[tokio::test]
 async fn test_orders() {
     let mut client = Client::new();
-    
+
     let _ = client.get_orders(TEST_ITEM).await.unwrap();
 }
 
 #[tokio::test]
 async fn test_orders_top() {
     let mut client = Client::new();
-    
-    let _ = client.get_orders_top(TEST_ITEM, None).await.unwrap();
+
+    let items = client.get_orders_top(TEST_ITEM, None).await.unwrap();
+    println!("Orders for {}: {}", TEST_ITEM, items.len());
 }
 
 #[tokio::test]
 async fn test_filtered_orders_top() {
     let mut client = Client::new();
-    
+
     let filters = OrdersTopFilters {
         rank: Some(10),
         ..Default::default()
     };
 
-    let mods = client.get_orders_top(TEST_MOD, Some(filters)).await.unwrap();
+    let mods = client
+        .get_orders_top(TEST_MOD, Some(filters))
+        .await
+        .unwrap();
     let _ = mods.iter().map(|order| {
         let item_mod = order.clone().get_type();
         assert_eq!(item_mod.rank.unwrap(), 10u8);
@@ -54,7 +58,7 @@ async fn get_item() {
 async fn convert_mod() {
     let mut client = Client::new();
     let items = client.get_items().await.unwrap();
-    
+
     if let Some(item) = items.iter().find(|i| i.get_slug() == TEST_MOD) {
         match item.is_mod() {
             true => {
@@ -77,7 +81,7 @@ async fn convert_sculpture() {
             true => {
                 let sculpture = item.to_sculpture().unwrap();
                 let value = sculpture.calculate_value(None, None);
-                
+
                 assert_eq!(value, SCULPTURE_VALUE);
             }
             false => {
@@ -85,4 +89,10 @@ async fn convert_sculpture() {
             }
         }
     }
+}
+
+#[tokio::test]
+async fn all_rivens() {
+    let mut client = Client::new();
+    let _ = client.get_rivens().await.unwrap();
 }

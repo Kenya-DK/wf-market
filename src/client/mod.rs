@@ -23,7 +23,7 @@ async fn main() {
         Client::new()
             .login("username", "password", generate_device_id().as_str()).await.unwrap()
     };
-    
+
     let user = client.user.unwrap();
     println!("Logged in as: {}", user.name);
 }
@@ -31,31 +31,34 @@ async fn main() {
 */
 
 // Submodules
-mod order;
-mod item;
-mod constants;
 mod auth;
+mod constants;
+mod item;
+mod order;
+mod riven;
 mod utils;
 pub mod ws;
 
-use serde::Serialize;
-use crate::error::ApiError;
-use std::marker::PhantomData;
-use std::sync::Arc;
-use governor::clock::DefaultClock;
-use governor::RateLimiter;
-use governor::state::{InMemoryState, NotKeyed};
-use crate::types::user::{FullUser, StatusType};
-use reqwest::Method as HttpMethod;
-use crate::types::item::{Item as ItemObject, Order as OrderItem, OrderWithUser, OrdersTopResult};
+use crate::error::{ApiError, ApiErrorBody, ErrorResponse};
 use crate::types::filter::OrdersTopFilters;
 use crate::types::http::ApiResult;
+use crate::types::item::{Item as ItemObject, Order as OrderItem, OrderWithUser, OrdersTopResult};
+use crate::types::riven::Riven as RivenObject;
+use crate::types::user::{FullUser, StatusType};
+use governor::RateLimiter;
+use governor::clock::DefaultClock;
+use governor::state::{InMemoryState, NotKeyed};
+use reqwest::Method as HttpMethod;
+use serde::Serialize;
+use std::marker::PhantomData;
+use std::sync::Arc;
 
+pub use auth::*;
 use constants::*;
-use utils::*;
 pub use item::*;
 pub use order::*;
-pub use auth::*;
+pub use riven::*;
+use utils::*;
 
 pub struct Unauthenticated;
 pub struct Authenticated;
@@ -66,6 +69,7 @@ pub struct Client<State = Unauthenticated> {
     pub orders: Vec<Order<Owned>>,
     pub status: StatusType,
     items_cache: Vec<Item>,
+    rivens_cache: Vec<Riven>,
     token: Option<String>,
     device_id: Option<String>,
     limiter: Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>,
@@ -102,9 +106,8 @@ impl<State> Client<State> {
         path: &str,
         body: Option<&impl Serialize>,
     ) -> Result<T, ApiError> {
-        let builder = self
-            .http
-            .request(transform_method(method), BASE_URL.to_owned() + path);
+        let url = BASE_URL.to_owned() + path;
+        let builder = self.http.request(transform_method(method), &url);
 
         let builder = if let Some(body) = body {
             builder.json(body)
@@ -116,17 +119,56 @@ impl<State> Client<State> {
 
         match builder.send().await {
             Ok(resp) => {
+                let status = resp.status();
+
                 let body = resp
                     .text()
                     .await
                     .map_err(|_| ApiError::Unknown("Error".to_string()))?;
+
+                // Check if the status code indicates an error
+                match status {
+                    reqwest::StatusCode::OK | reqwest::StatusCode::CREATED => {}
+                    reqwest::StatusCode::UNAUTHORIZED => {
+                        return Err(ApiError::Unauthorized);
+                    }
+                    reqwest::StatusCode::NOT_FOUND => {
+                        return Err(ApiError::NotFound(format!(
+                            "Resource not found: {}, Message: {}",
+                            url, body
+                        )));
+                    }
+                    reqwest::StatusCode::BAD_REQUEST | reqwest::StatusCode::FORBIDDEN => {
+                        match serde_json::from_str::<ErrorResponse>(&body) {
+                            Ok(api_result) => {
+                                return Err(ApiError::WFMError(api_result));
+                            }
+                            Err(e) => {
+                                return Err(ApiError::ParsingError(
+                                    format!(
+                                        "Error Parsing Bad Request Error: {:?}, Message: {}",
+                                        e, body
+                                    )
+                                    .to_string(),
+                                ));
+                            }
+                        }
+                    }
+                    _ => {
+                        return Err(ApiError::Unknown(format!(
+                            "Unexpected status code: {}",
+                            status
+                        )));
+                    }
+                }
+
                 let data = serde_json::from_str::<T>(&body);
 
                 match data {
                     Ok(data) => Ok(data),
-                    Err(err) => {
-                        Err(ApiError::ParsingError(format!("Error Parsing: {:?}", err).to_string()))
-                    },
+                    Err(err) => Err(ApiError::ParsingError(
+                        format!("Error Parsing: {:?}", err).to_string(),
+                    )),
                 }
             }
             Err(_) => Err(ApiError::RequestError),
@@ -229,18 +271,26 @@ impl<State> Client<State> {
 
         let is_filtering_status = if let Some(filters) = filters.clone() {
             filters.user_activity.is_some()
-        } else { false };
+        } else {
+            false
+        };
 
         let buy: Vec<Order<Unowned>> = data
             .buy
             .iter()
-            .filter(|o| is_filtering_status && o.user.status_type == filters.clone().unwrap().user_activity.unwrap())
+            .filter(|o| {
+                is_filtering_status
+                    && o.user.status_type == filters.clone().unwrap().user_activity.unwrap()
+            })
             .map(|order| Order::new(&order.downgrade()))
             .collect();
         let sell: Vec<Order<Unowned>> = data
             .sell
             .iter()
-            .filter(|o| is_filtering_status && o.user.status_type == filters.clone().unwrap().user_activity.unwrap())
+            .filter(|o| {
+                is_filtering_status
+                    && o.user.status_type == filters.clone().unwrap().user_activity.unwrap()
+            })
             .map(|order| Order::new(&order.downgrade()))
             .collect();
 
@@ -290,6 +340,25 @@ impl<State> Client<State> {
             .await;
 
         Ok(Order::new(&order?.data))
+    }
+    /**
+    Fetch all listed rivens from the WFM API
+
+    # Returns
+    List of all listed rivens
+    */
+    pub async fn get_rivens(&self) -> Result<Vec<Riven>, ApiError> {
+        if !self.rivens_cache.is_empty() {
+            let mut new_items = Vec::new();
+            new_items.clone_from(&self.rivens_cache);
+            return Ok(new_items);
+        }
+
+        let rivens: Result<ApiResult<Vec<RivenObject>>, ApiError> = self
+            .call_api(Method::Get, "/riven/weapons", None::<&NoBody>)
+            .await;
+
+        Ok(rivens?.data.iter().map(|riven| Riven::new(riven)).collect())
     }
 }
 
