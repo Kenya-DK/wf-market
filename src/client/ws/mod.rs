@@ -31,20 +31,27 @@ async fn main() -> Result<(), WsError> {
     tokio::signal::ctrl_c().await.unwrap() // Our client is not long-running, so to keep the WsClient in scope we need to never return
 }
 ```
+Note:
+-- Use internal/connected and internal/disconnected to handle connection state
 */
 
+use crate::error::WsError;
+use futures_util::stream::{AbortHandle, Abortable};
 use futures_util::{SinkExt, StreamExt};
-use std::collections::HashMap;
-use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tokio_tungstenite::{connect_async};
-use tokio_tungstenite::tungstenite::{Error, Message, Utf8Bytes};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tokio::sync::mpsc;
+use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
-use crate::error::WsError;
+use tokio_tungstenite::tungstenite::{Message, Utf8Bytes};
 
 pub(super) const WS_URL: &'static str = "wss://warframe.market/socket-v2";
+
+// Uncomment for local testing
+// pub(super) const WS_URL: &'static str = "ws://localhost:7369";
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct WsMessage {
@@ -55,6 +62,32 @@ pub struct WsMessage {
     pub id: Option<String>,
     #[serde(rename = "refId", skip_serializing_if = "Option::is_none")]
     pub ref_id: Option<String>,
+}
+impl WsMessage {
+    pub fn new(route: &str, payload: Option<serde_json::Value>) -> Self {
+        WsMessage {
+            route: route.to_string(),
+            payload,
+            id: Some(uuid::Uuid::new_v4().to_string()),
+            ref_id: None,
+        }
+    }
+    pub fn connect() -> Self {
+        WsMessage {
+            route: "@internal|internal/connected".to_string(),
+            payload: Some(json!({"status": "connected"})),
+            id: Some("INTERNAL".to_string()),
+            ref_id: None,
+        }
+    }
+    pub fn disconnect(error: String) -> Self {
+        WsMessage {
+            route: "@internal|internal/disconnected".to_string(),
+            payload: Some(json!({"reason": error})),
+            id: Some("INTERNAL".to_string()),
+            ref_id: None,
+        }
+    }
 }
 
 // Route structure with parameter support
@@ -75,10 +108,18 @@ impl Route {
             if let Some(colon_pos) = path_and_param.find(':') {
                 let path = path_and_param[..colon_pos].to_string();
                 let parameter = Some(path_and_param[colon_pos + 1..].to_string());
-                Ok(Route { protocol, path, parameter })
+                Ok(Route {
+                    protocol,
+                    path,
+                    parameter,
+                })
             } else {
                 let path = path_and_param.to_string();
-                Ok(Route { protocol, path, parameter: None })
+                Ok(Route {
+                    protocol,
+                    path,
+                    parameter: None,
+                })
             }
         } else {
             Err(WsError::InvalidPath(route_str.to_string()))
@@ -114,7 +155,9 @@ pub struct MessageSender {
 
 impl MessageSender {
     pub fn send_message(&self, message: WsMessage) -> Result<(), WsError> {
-        self.tx.send(message).map_err(|_| WsError::SendError)?;
+        self.tx
+            .send(message)
+            .map_err(|e| WsError::SendError(e.to_string()))?;
         Ok(())
     }
 
@@ -122,7 +165,7 @@ impl MessageSender {
         &self,
         route: &str,
         payload: serde_json::Value,
-        ref_id: &str
+        ref_id: &str,
     ) -> Result<(), WsError> {
         let message = WsMessage {
             route: route.to_string(),
@@ -133,11 +176,7 @@ impl MessageSender {
         self.send_message(message)
     }
 
-    pub fn send_request(
-        &self,
-        route: &str,
-        payload: serde_json::Value
-    ) -> Result<String, WsError> {
+    pub fn send_request(&self, route: &str, payload: serde_json::Value) -> Result<String, WsError> {
         let id = uuid::Uuid::new_v4().to_string();
         let message = WsMessage {
             route: route.to_string(),
@@ -151,7 +190,8 @@ impl MessageSender {
 }
 
 // Updated callback type to include sender and route info
-pub type MessageCallback = Arc<dyn Fn(&WsMessage, &Route, &MessageSender) -> Result<(), WsError> + Send + Sync>;
+pub type MessageCallback =
+    Arc<dyn Fn(&WsMessage, &Route, &MessageSender) -> Result<(), WsError> + Send + Sync>;
 
 // Internal router
 pub(crate) struct Router {
@@ -167,9 +207,7 @@ impl Router {
 
     // Internal reserved paths that the client uses
     fn get_reserved_paths() -> Vec<&'static str> {
-        vec![
-            "cmd/auth/signIn",
-        ]
+        vec!["cmd/auth/signIn"]
     }
 
     fn is_path_reserved(path: &str) -> bool {
@@ -204,47 +242,70 @@ impl Router {
         // 1. Exact match with parameter (e.g., "cmd/subscribe/newOrders:ok")
         // 2. Base path match (e.g., "cmd/subscribe/newOrders")
 
-        let callback = self.routes.get(&route.full_path())
+        let callback = self
+            .routes
+            .get(&route.full_path())
             .or_else(|| self.routes.get(route.base_path()));
 
         if let Some(callback) = callback {
             callback(message, &route, sender)?;
         } else {
             // Optionally log unhandled routes
-            println!("No handler for route: {} (full: {})", route.base_path(), route.full_path());
+            println!(
+                "No handler for route: {} (full: {})",
+                route.base_path(),
+                route.full_path()
+            );
         }
 
         Ok(())
     }
 
     // Handle internal client routes
-    fn handle_internal_route(&self, route: &Route, message: &WsMessage, sender: &MessageSender) -> Result<(), WsError> {
+    fn handle_internal_route(
+        &self,
+        route: &Route,
+        _message: &WsMessage,
+        sender: &MessageSender,
+    ) -> Result<(), WsError> {
         match route.base_path() {
             "cmd/auth/signIn" => {
-                println!("Handling internal auth sign in with parameter: {:?}", route.parameter);
+                println!(
+                    "Handling internal auth sign in with parameter: {:?}",
+                    route.parameter
+                );
                 // Example: Handle different auth responses based on parameter
                 match route.parameter.as_deref() {
                     Some("ok") => {
-                        if let Some(connected_callback) = self.routes.get("internal/connected") {
+                        if let Some(connected_callback) = self.routes.get("internal/auth_connected")
+                        {
                             let route = Route {
                                 protocol: "@internal".to_string(),
-                                path: "internal/connected".to_string(),
+                                path: "internal/auth_connected".to_string(),
                                 parameter: None,
                             };
-                            connected_callback(&WsMessage {
-                                route: "@internal|internal/connected".to_string(),
-                                payload: Some(serde_json::Value::from(true)),
-                                id: Some("INTERNAL".to_string()),
-                                ref_id: None,
-                            }, &route, &sender)?;
+                            connected_callback(
+                                &WsMessage {
+                                    route: "@internal|internal/auth_connected".to_string(),
+                                    payload: Some(serde_json::Value::from(true)),
+                                    id: Some("INTERNAL".to_string()),
+                                    ref_id: None,
+                                },
+                                &route,
+                                &sender,
+                            )?;
                         }
-                    },
+                    }
                     Some("error") => println!("Auth failed"),
                     _ => println!("Unknown auth response"),
                 }
             }
             _ => {
-                println!("Unhandled internal route: {} (parameter: {:?})", route.base_path(), route.parameter);
+                println!(
+                    "Unhandled internal route: {} (parameter: {:?})",
+                    route.base_path(),
+                    route.parameter
+                );
             }
         }
         Ok(())
@@ -287,101 +348,179 @@ impl WsClientBuilder {
 
     /// Build and start the WebSocket client
     pub async fn build(self) -> Result<WsClient, WsError> {
-        let mut request = WS_URL.into_client_request().unwrap();
-
-        let headers = request.headers_mut();
-        headers.append("Sec-WebSocket-Protocol", "wfm".parse().unwrap());
-        // TODO: We probably need to require the developer to enter a useragent so not every app using this gets generalized as one and the same
-        headers.append("User-Agent", "wf-market-rs".parse().unwrap());
-
-        let (ws_stream, _) = connect_async(request).await.map_err(|err| {
-            println!("Failed to establish connection to {}: {}", WS_URL, err.to_string());
-            match err {
-                Error::Http(mut http) => {
-                    let body = http.body_mut();
-                    for char in body.clone().unwrap() {
-                        print!("{}", char as char);
-                    }
-                    print!("\n")
-                },
-                _ => unreachable!()
-            }
-            WsError::ConnectionError
-        })?;
-        let (mut write, mut read) = ws_stream.split();
-
-        // Create message channel
-        let (tx, mut rx) = mpsc::unbounded_channel::<WsMessage>();
-        let sender = MessageSender { tx };
-
-        // Spawn write task
-        let write_task = tokio::spawn(async move {
-            while let Some(message) = rx.recv().await {
-                if let Ok(json) = serde_json::to_string(&message) {
-                    if let Err(e) = write.send(Message::Text(Utf8Bytes::from(json))).await {
-                        eprintln!("Failed to send message: {}", e);
-                        break;
-                    }
-                }
-            }
-        });
-
-        // Spawn message handling task
         let router = Arc::new(self.router);
-        let sender_clone = sender.clone();
-        let read_task = tokio::spawn(async move {
-            while let Some(message) = read.next().await {
-                if let Ok(message) = message {
-                    match message {
-                        Message::Text(text) => {
-                            if let Err(e) = WsClient::handle_text_message(&router, &text, &sender_clone) {
-                                eprintln!("Error handling message: {:?}", e);
+        let sender_holder = Arc::new(Mutex::new(None));
+
+        tokio::spawn({
+            let sender_holder = Arc::clone(&sender_holder);
+            let router = Arc::clone(&router);
+
+            async move {
+                loop {
+                    let mut request = WS_URL.into_client_request().unwrap();
+                    let headers = request.headers_mut();
+                    headers.append("Sec-WebSocket-Protocol", "wfm".parse().unwrap());
+                    headers.append("User-Agent", "wf-market-rs".parse().unwrap());
+
+                    // println!("Attempting to connect to WebSocket...");
+
+                    match connect_async(request).await {
+                        Ok((ws_stream, _)) => {
+                            // println!("Connected to WebSocket.");
+                            let ws_error = Arc::new(Mutex::new(None));
+                            let ws_error_write = Arc::clone(&ws_error);
+                            let ws_error_read = Arc::clone(&ws_error);
+                            let (mut write, read) = ws_stream.split();
+                            let (tx, mut rx) = mpsc::unbounded_channel::<WsMessage>();
+                            let sender = MessageSender { tx: tx.clone() };
+
+                            // Send connection message to the router
+                            WsClient::send_connect_message(&router, &sender).unwrap();
+
+                            // Send authentication
+                            let auth_payload = json!({
+                                "token": self.token,
+                                "deviceId": self.device_id,
+                            });
+                            match sender.send_request("@wfm|cmd/auth/signIn", auth_payload) {
+                                Ok(_) => {}
+                                Err(e) => {
+                                    eprintln!("Failed to send authentication request: {:?}", e);
+                                    continue; // Retry connection
+                                }
                             }
+
+                            *sender_holder.lock().unwrap() = Some(sender.clone());
+
+                            // Create an abort handle to control the write task
+                            let (abort_handle, abort_registration) = AbortHandle::new_pair();
+
+                            // Write task (wrapped in Abortable) Is responsible for sending messages
+                            // It will be aborted if the read task fails or ends
+                            let write_task = tokio::spawn(Abortable::new(
+                                async move {
+                                    let ws_error_write = Arc::clone(&ws_error_write);
+                                    while let Some(msg) = rx.recv().await {
+                                        if let Ok(json) = serde_json::to_string(&msg) {
+                                            if let Err(e) = write
+                                                .send(Message::Text(Utf8Bytes::from(json)))
+                                                .await
+                                            {
+                                                eprintln!("Write failed: {}", e);
+                                                *ws_error_write.lock().unwrap() = Some(e);
+                                                break;
+                                            }
+                                        }
+                                    }
+                                },
+                                abort_registration,
+                            ));
+
+                            // Read task (will trigger abort on write if it fails or ends)
+                            let read_task = tokio::spawn({
+                                let sender = sender.clone();
+                                let router = Arc::clone(&router);
+                                let abort_handle = abort_handle.clone(); // Move handle in
+                                let mut read = read;
+
+                                async move {
+                                    let ws_error_read = Arc::clone(&ws_error_read);
+                                    while let Some(msg) = read.next().await {
+                                        match msg {
+                                            Ok(Message::Text(text)) => {
+                                                if let Err(e) = WsClient::handle_text_message(
+                                                    &router, &text, &sender,
+                                                ) {
+                                                    eprintln!("Handle error: {:?}", e);
+                                                }
+                                            }
+                                            Ok(Message::Close(_)) => {
+                                                println!("Connection closed by server.");
+                                                break;
+                                            }
+                                            Ok(_) => (),
+                                            Err(e) => {
+                                                eprintln!("Read error: {}", e);
+                                                *ws_error_read.lock().unwrap() = Some(e);
+                                                break;
+                                            }
+                                        }
+                                    }
+
+                                    // If we exit the read loop, abort the write task
+                                    abort_handle.abort();
+                                }
+                            });
+
+                            // Wait for both tasks
+                            let _ = tokio::join!(read_task, write_task);
+                            // Send a message to the sender to indicate disconnection
+                            WsClient::send_disconnect_message(
+                                &router,
+                                &WsMessage::disconnect(format!(
+                                    "Connection lost: {:?} will retry in 5 seconds",
+                                    ws_error.lock().unwrap()
+                                )),
+                                &sender,
+                            )
+                            .unwrap();
+                            tokio::time::sleep(Duration::from_secs(5)).await;
                         }
-                        Message::Close(_) => { break }
-                        _ => { println!("Unexpected message: {:?}", message); }
+
+                        Err(err) => {
+                            eprintln!("WebSocket connection failed: {}", err);
+                            tokio::time::sleep(Duration::from_secs(5)).await;
+                        }
                     }
                 }
             }
         });
 
-        // Return the built client - spawn background task to manage the connection
-        tokio::spawn(async move {
-            let _ = tokio::join!(read_task, write_task);
-        });
+        tokio::time::sleep(Duration::from_secs(1)).await;
 
-        let ws_client = WsClient {
-            sender: Some(sender),
-        };
-
-        // Send authentication
-        let auth_payload = json!({
-            "token": self.token,
-            "deviceId": self.device_id,
-        });
-        ws_client.send_request("@wfm|cmd/auth/signIn", auth_payload)?;
-
-        Ok(ws_client)
+        Ok(WsClient {
+            sender: Arc::clone(&sender_holder),
+        })
     }
 }
 
 // The actual WebSocket client (runtime instance)
 pub struct WsClient {
-    sender: Option<MessageSender>,
+    sender: Arc<Mutex<Option<MessageSender>>>,
 }
 
 impl WsClient {
-    pub(crate) fn handle_text_message(router: &Router, text: &str, sender: &MessageSender) -> Result<(), WsError> {
-        let message: WsMessage = serde_json::from_str(text).map_err(|_| WsError::InvalidMessageReceived(text.to_string()))?;
+    pub(crate) fn send_disconnect_message(
+        router: &Router,
+        message: &WsMessage,
+        sender: &MessageSender,
+    ) -> Result<(), WsError> {
+        router.route_message(&message, sender)
+    }
+    pub(crate) fn send_connect_message(
+        router: &Router,
+        sender: &MessageSender,
+    ) -> Result<(), WsError> {
+        let message = WsMessage::connect();
+        router.route_message(&message, sender)
+    }
+    pub(crate) fn handle_text_message(
+        router: &Router,
+        text: &str,
+        sender: &MessageSender,
+    ) -> Result<(), WsError> {
+        let message: WsMessage = serde_json::from_str(text)
+            .map_err(|_| WsError::InvalidMessageReceived(text.to_string()))?;
         router.route_message(&message, sender)
     }
 
     // Public methods for sending messages (only available after build)
     pub fn send_message(&self, message: WsMessage) -> Result<(), WsError> {
-        if let Some(sender) = &self.sender {
+        let sender_guard = self.sender.lock().unwrap();
+        if let Some(sender) = sender_guard.as_ref() {
             sender.send_message(message)
         } else {
-            Err(WsError::NotConnected)
+            Err(WsError::ConnectionError)
         }
     }
 
@@ -389,26 +528,26 @@ impl WsClient {
         &self,
         route: &str,
         payload: serde_json::Value,
-        ref_id: &str
+        ref_id: &str,
     ) -> Result<(), WsError> {
-        if let Some(sender) = &self.sender {
+        let sender_guard = self.sender.lock().unwrap();
+        if let Some(sender) = sender_guard.as_ref() {
             sender.send_response(route, payload, ref_id)
         } else {
             Err(WsError::NotConnected)
         }
     }
 
-    pub fn send_request(
-        &self,
-        route: &str,
-        payload: serde_json::Value
-    ) -> Result<String, WsError> {
-        let route_parsed = Route::parse(route).map_err(|_| WsError::InvalidPath(route.to_string()))?;
+    pub fn send_request(&self, route: &str, payload: serde_json::Value) -> Result<String, WsError> {
+        let route_parsed =
+            Route::parse(route).map_err(|_| WsError::InvalidPath(route.to_string()))?;
         if route_parsed.protocol == "internal" {
-            return Err(WsError::ReservedPath("Can't send on internal routes".to_string()))
+            return Err(WsError::ReservedPath(
+                "Can't send on internal routes".to_string(),
+            ));
         }
-
-        if let Some(sender) = &self.sender {
+        let sender_guard = self.sender.lock().unwrap();
+        if let Some(sender) = sender_guard.as_ref() {
             sender.send_request(route, payload)
         } else {
             Err(WsError::NotConnected)
@@ -416,6 +555,6 @@ impl WsClient {
     }
 
     pub fn get_sender(&self) -> Option<MessageSender> {
-        self.sender.clone()
+        self.sender.lock().unwrap().clone()
     }
 }
